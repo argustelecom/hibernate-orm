@@ -27,7 +27,7 @@ import org.hibernate.type.Type;
 @Deprecated
 final class OldCacheKeyImplementation implements Serializable {
 	private final Object id;
-	private final Type type;
+	private final String typeName;
 	private final String entityOrRoleName;
 	private final String tenantId;
 	private final int hashCode;
@@ -45,44 +45,39 @@ final class OldCacheKeyImplementation implements Serializable {
 	 */
 	OldCacheKeyImplementation(
 			final Object id,
-			final Type type,
+			final String typeName,
 			final String entityOrRoleName,
 			final String tenantId,
 			final SessionFactoryImplementor factory) {
 		this.id = id;
-		this.type = type;
+		this.typeName = typeName;
 		this.entityOrRoleName = entityOrRoleName;
 		this.tenantId = tenantId;
-		this.hashCode = calculateHashCode( type, factory );
-	}
-
-	private int calculateHashCode(Type type, SessionFactoryImplementor factory) {
-		int result = type.getHashCode( id, factory );
-		result = 31 * result + (tenantId != null ? tenantId.hashCode() : 0);
-		return result;
+		this.hashCode = 51 + ((id == null)? 0: id.hashCode());
 	}
 
 	public Object getId() {
 		return id;
 	}
 
-	@Override
-	public boolean equals(Object other) {
-		if ( other == null ) {
-			return false;
+		@Override
+		public boolean equals(Object other) {
+			
+			if (other == null) {
+				return false;
+			}
+			if (this == other) {
+				return true;
+			}
+			if (hashCode != other.hashCode() || !(other instanceof OldCacheKeyImplementation)) {
+				// hashCode is part of this check since it is pre-calculated and hash must match for equals to be true
+				return false;
+			}
+			final OldCacheKeyImplementation that = (OldCacheKeyImplementation) other;
+			// если мы здесь, значит объекты одного класса (this) и имеют одинаковый hash. По идее, можно уже
+			// возвращать true, но уточним еще кое-что:
+			return EqualsHelper.equals(entityOrRoleName, that.entityOrRoleName) && EqualsHelper.equals(typeName, that.typeName) && EqualsHelper.equals( id, that.id);
 		}
-		if ( this == other ) {
-			return true;
-		}
-		if ( hashCode != other.hashCode() || !( other instanceof OldCacheKeyImplementation ) ) {
-			//hashCode is part of this check since it is pre-calculated and hash must match for equals to be true
-			return false;
-		}
-		final OldCacheKeyImplementation that = (OldCacheKeyImplementation) other;
-		return EqualsHelper.equals( entityOrRoleName, that.entityOrRoleName )
-				&& type.isEqual( id, that.id)
-				&& EqualsHelper.equals( tenantId, that.tenantId );
-	}
 
 	@Override
 	public int hashCode() {

@@ -41,11 +41,11 @@ import org.hibernate.persister.entity.EntityPersister;
 public class DefaultCacheKeysFactory {
 
 	public static Object createCollectionKey(Object id, CollectionPersister persister, SessionFactoryImplementor factory, String tenantIdentifier) {
-		return new OldCacheKeyImplementation( id, persister.getKeyType(), persister.getRole(), tenantIdentifier, factory );
+		return new OldCacheKeyImplementation( id, persister.getKeyType().getClass().getCanonicalName(), persister.getRole(), tenantIdentifier, factory );
 	}
 
 	public static Object createEntityKey(Object id, EntityPersister persister, SessionFactoryImplementor factory, String tenantIdentifier) {
-		return new OldCacheKeyImplementation( id, persister.getIdentifierType(), persister.getRootEntityName(), tenantIdentifier, factory );
+		return new OldCacheKeyImplementation( id, persister.getIdentifierType().getClass().getCanonicalName(), persister.getRootEntityName(), tenantIdentifier, factory );
 	}
 
 	public static Object createNaturalIdKey(Object[] naturalIdValues, EntityPersister persister, SessionImplementor session) {
