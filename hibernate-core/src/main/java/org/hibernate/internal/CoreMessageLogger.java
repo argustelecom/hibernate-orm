@@ -1814,4 +1814,22 @@ public interface CoreMessageLogger extends BasicLogger {
 	@LogMessage(level = WARN)
 	@Message(value = "Setting " + AvailableSettings.NATIVE_EXCEPTION_HANDLING_51_COMPLIANCE + "=true is not valid with JPA bootstrapping; setting will be ignored.", id = 489 )
 	void nativeExceptionHandling51ComplianceJpaBootstrapping();
+
+	@LogMessage(level = WARN)
+	@Message(value = "Attempt to merge an uninitialized collection with queued operations; queued operations will be ignored: %s", id = 494)
+	void ignoreQueuedOperationsOnMerge(String collectionInfoString);
+
+	@LogMessage(level = WARN)
+	@Message(value = "Attaching an uninitialized collection with queued operations to a session: %s", id = 495)
+	void queuedOperationWhenAttachToSession(String collectionInfoString);
+
+	@LogMessage(level = INFO)
+	@Message(value = "Detaching an uninitialized collection with queued operations from a session: %s", id = 496)
+	void queuedOperationWhenDetachFromSession(String collectionInfoString);
+
+	@LogMessage(level = DEBUG)
+	@Message(value = "Detaching an uninitialized collection with queued operations from a session due to rollback: %s", id = 498)
+	void queuedOperationWhenDetachFromSessionOnRollback(String collectionInfoString);
+	@Message(value = "Using @AttributeOverride or @AttributeOverrides in conjunction with entity inheritance is not supported: %s. The overriding definitions are ignored.", id = 499)
+	void unsupportedAttributeOverrideWithEntityInheritance(String entityName);
 }
