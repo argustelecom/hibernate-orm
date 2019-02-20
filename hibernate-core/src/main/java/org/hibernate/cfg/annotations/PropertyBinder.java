@@ -14,6 +14,7 @@ import javax.persistence.Lob;
 
 import org.hibernate.AnnotationException;
 import org.hibernate.HibernateException;
+import org.hibernate.annotations.AttributeAccessor;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.NaturalId;
@@ -51,7 +52,7 @@ import org.jboss.logging.Logger;
  * @author Emmanuel Bernard
  */
 public class PropertyBinder {
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, PropertyBinder.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, PropertyBinder.class.getName());
 
 	private MetadataBuildingContext buildingContext;
 
@@ -273,6 +274,11 @@ public class PropertyBinder {
 
 		if ( property != null ) {
 			prop.setValueGenerationStrategy( determineValueGenerationStrategy( property ) );
+
+			if ( property.isAnnotationPresent( AttributeAccessor.class ) ) {
+				final AttributeAccessor accessor = property.getAnnotation( AttributeAccessor.class );
+				prop.setPropertyAccessorName( accessor.value() );
+			}
 		}
 
 		NaturalId naturalId = property != null ? property.getAnnotation( NaturalId.class ) : null;
@@ -420,7 +426,7 @@ public class PropertyBinder {
 			AnnotationValueGeneration<A> valueGeneration = (AnnotationValueGeneration<A>) generationType.newInstance();
 			valueGeneration.initialize(
 					annotation,
-					buildingContext.getBuildingOptions().getReflectionManager().toClass( property.getType() )
+					buildingContext.getBootstrapContext().getReflectionManager().toClass( property.getType() )
 			);
 
 			return valueGeneration;

@@ -22,14 +22,12 @@ import org.junit.Test;
 
 import org.jboss.logging.Logger;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 /**
  * @author Vlad Mihalcea
  */
 public class OneToOneBidirectionalTest extends BaseEntityManagerFunctionalTestCase {
-
-	private static final Logger log = Logger.getLogger( OneToOneBidirectionalTest.class );
 
 	@Override
 	protected Class<?>[] getAnnotatedClasses() {
@@ -96,8 +94,17 @@ public class OneToOneBidirectionalTest extends BaseEntityManagerFunctionalTestCa
 		@Column(name = "`number`")
 		private String number;
 
-		@OneToOne(mappedBy = "phone", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+		@OneToOne(
+			mappedBy = "phone",
+			cascade = CascadeType.ALL,
+			orphanRemoval = true,
+			fetch = FetchType.LAZY
+		)
 		private PhoneDetails details;
+
+		//Getters and setters are omitted for brevity
+
+	//end::associations-one-to-one-bidirectional-example[]
 
 		public Phone() {
 		}
@@ -118,6 +125,7 @@ public class OneToOneBidirectionalTest extends BaseEntityManagerFunctionalTestCa
 			return details;
 		}
 
+	//tag::associations-one-to-one-bidirectional-example[]
 		public void addDetails(PhoneDetails details) {
 			details.setPhone( this );
 			this.details = details;
@@ -146,6 +154,10 @@ public class OneToOneBidirectionalTest extends BaseEntityManagerFunctionalTestCa
 		@JoinColumn(name = "phone_id")
 		private Phone phone;
 
+		//Getters and setters are omitted for brevity
+
+	//end::associations-one-to-one-bidirectional-example[]
+
 		public PhoneDetails() {
 		}
 
@@ -173,6 +185,7 @@ public class OneToOneBidirectionalTest extends BaseEntityManagerFunctionalTestCa
 		public void setPhone(Phone phone) {
 			this.phone = phone;
 		}
+	//tag::associations-one-to-one-bidirectional-example[]
 	}
 	//end::associations-one-to-one-bidirectional-example[]
 }

@@ -6,24 +6,15 @@
  */
 package org.hibernate.engine.jdbc.dialect.internal;
 
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-
-import java.sql.DatabaseMetaData;
-import java.sql.SQLException;
-
-import org.hibernate.dialect.Dialect;
-import org.hibernate.dialect.PostgreSQL81Dialect;
-import org.hibernate.dialect.PostgreSQL82Dialect;
-import org.hibernate.dialect.PostgreSQL9Dialect;
-import org.hibernate.dialect.SQLServer2005Dialect;
-import org.hibernate.dialect.SQLServer2008Dialect;
-import org.hibernate.dialect.SQLServerDialect;
-import org.hibernate.dialect.resolver.DialectResolverTest;
+import org.hibernate.dialect.*;
 import org.hibernate.dialect.resolver.TestingDialectResolutionInfo;
-
 import org.hibernate.testing.junit4.BaseUnitTestCase;
 import org.junit.Test;
+
+import java.sql.SQLException;
+
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Unit test of the {@link StandardDialectResolver} class.
@@ -54,6 +45,12 @@ public class StandardDialectResolverTest extends BaseUnitTestCase {
 	public void testResolveDialectInternalForSQLServer2012() 
 			throws SQLException {
 		runSQLServerDialectTest( 11, SQLServer2008Dialect.class );
+	}
+
+	@Test
+	public void testResolveDialectInternalForSQLServer2014()
+			throws SQLException {
+		runSQLServerDialectTest( 12, SQLServer2012Dialect.class );
 	}
 
 	@Test
@@ -99,6 +96,58 @@ public class StandardDialectResolverTest extends BaseUnitTestCase {
 		runPostgresDialectTest( 9, 2, PostgreSQL9Dialect.class );
 	}
 
+	@Test
+	public void testResolveDialectInternalForMariaDB103() throws SQLException {
+		runMariaDBDialectTest( 10, 3, MariaDB103Dialect.class );
+	}
+
+	@Test
+	public void testResolveDialectInternalForMariaDB102() throws SQLException {
+		runMariaDBDialectTest( 10, 2, MariaDB102Dialect.class );
+	}
+
+	@Test
+	public void testResolveDialectInternalForMariaDB101() throws SQLException {
+		runMariaDBDialectTest( 10, 1, MariaDB10Dialect.class );
+	}
+
+	@Test
+	public void testResolveDialectInternalForMariaDB100() throws SQLException {
+		runMariaDBDialectTest( 10, 0, MariaDB10Dialect.class );
+	}
+
+	@Test
+	public void testResolveDialectInternalForMariaDB55() throws SQLException {
+		runMariaDBDialectTest( 5, 5, MariaDB53Dialect.class );
+	}
+
+	@Test
+	public void testResolveDialectInternalForMariaDB52() throws SQLException {
+		runMariaDBDialectTest( 5, 2, MariaDBDialect.class );
+	}
+
+	@Test
+	public void testResolveDialectInternalForMySQL57() throws SQLException {
+		runMySQLDialectTest( 5, 7, MySQL57Dialect.class );
+	}
+
+	@Test
+	public void testResolveDialectInternalForMySQL8() throws SQLException {
+		runMySQLDialectTest( 8, 0, MySQL8Dialect.class );
+	}
+
+	private static void runMariaDBDialectTest(
+			int majorVersion, int minorVersion, Class<? extends MariaDBDialect> expectedDialect)
+			throws SQLException {
+		runDialectTest( "MariaDB", "MariaDB connector/J", majorVersion, minorVersion, expectedDialect );
+	}
+
+	private static void runMySQLDialectTest(
+			int majorVersion, int minorVersion, Class<? extends MySQLDialect> expectedDialect)
+			throws SQLException {
+		runDialectTest( "MySQL", "MySQL connector/J", majorVersion, minorVersion, expectedDialect );
+	}
+
 	private static void runSQLServerDialectTest(
 			int version, Class<? extends SQLServerDialect> expectedDialect)
 			throws SQLException {
@@ -118,9 +167,18 @@ public class StandardDialectResolverTest extends BaseUnitTestCase {
 			int majorVersion,
 			int minorVersion,
 			Class<? extends Dialect> expectedDialect) {
-		TestingDialectResolutionInfo info = TestingDialectResolutionInfo.forDatabaseInfo( productName, majorVersion, minorVersion );
+		runDialectTest( productName, null, majorVersion, minorVersion, expectedDialect );
+	}
 
-		Dialect dialect = StandardDialectResolver.INSTANCE.resolveDialect( info );
+	private static void runDialectTest(
+			String productName,
+			String driverName,
+			int majorVersion,
+			int minorVersion,
+			Class<? extends Dialect> expectedDialect) {
+		TestingDialectResolutionInfo info = TestingDialectResolutionInfo.forDatabaseInfo( productName, driverName, majorVersion, minorVersion );
+
+		Dialect dialect = new StandardDialectResolver().resolveDialect( info );
 
 		StringBuilder builder = new StringBuilder( productName ).append( " " )
 				.append( majorVersion );

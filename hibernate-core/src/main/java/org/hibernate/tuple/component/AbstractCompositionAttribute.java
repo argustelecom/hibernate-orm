@@ -83,11 +83,15 @@ public abstract class AbstractCompositionAttribute
 						int columnPosition = currentColumnPosition;
 						currentColumnPosition += type.getColumnSpan( sessionFactory() );
 
+						final CompositeType cType = getType();
+						final boolean nullable =
+								cType.getPropertyNullability() == null ||
+										cType.getPropertyNullability()[subAttributeNumber];
+
 						if ( type.isAssociationType() ) {
 							// we build the association-key here because of the "goofiness" with 'currentColumnPosition'
 							final AssociationKey associationKey;
 							final AssociationType aType = (AssociationType) type;
-							final Joinable joinable = aType.getAssociatedJoinable( sessionFactory() );
 
 							if ( aType.isAnyType() ) {
 								associationKey = new AssociationKey(
@@ -106,6 +110,8 @@ public abstract class AbstractCompositionAttribute
 								);
 							}
 							else if ( aType.getForeignKeyDirection() == ForeignKeyDirection.FROM_PARENT ) {
+								final Joinable joinable = aType.getAssociatedJoinable( sessionFactory() );
+
 								final String lhsTableName;
 								final String[] lhsColumnNames;
 
@@ -128,16 +134,13 @@ public abstract class AbstractCompositionAttribute
 								associationKey = new AssociationKey( lhsTableName, lhsColumnNames );
 							}
 							else {
+								final Joinable joinable = aType.getAssociatedJoinable( sessionFactory() );
+
 								associationKey = new AssociationKey(
 										joinable.getTableName(),
 										getRHSColumnNames( aType, sessionFactory() )
 								);
 							}
-
-							final CompositeType cType = getType();
-							final boolean nullable =
-									cType.getPropertyNullability() == null ||
-											cType.getPropertyNullability()[subAttributeNumber];
 
 							return new CompositeBasedAssociationAttribute(
 									AbstractCompositionAttribute.this,
@@ -173,7 +176,7 @@ public abstract class AbstractCompositionAttribute
 											.setUpdateable( AbstractCompositionAttribute.this.isUpdateable() )
 											// todo : handle nested ValueGeneration strategies...
 											//		disallow if our strategy != NEVER
-											.setNullable( getType().getPropertyNullability()[subAttributeNumber] )
+											.setNullable( nullable )
 											.setDirtyCheckable( true )
 											.setVersionable( AbstractCompositionAttribute.this.isVersionable() )
 											.setCascadeStyle( getType().getCascadeStyle( subAttributeNumber ) )
@@ -182,9 +185,6 @@ public abstract class AbstractCompositionAttribute
 							);
 						}
 						else {
-							final CompositeType cType = getType();
-							final boolean nullable = cType.getPropertyNullability() == null || cType.getPropertyNullability()[subAttributeNumber];
-
 							return new CompositeBasedBasicAttribute(
 									AbstractCompositionAttribute.this,
 									sessionFactory(),

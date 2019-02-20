@@ -18,14 +18,12 @@ import org.junit.Test;
 
 import org.jboss.logging.Logger;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 /**
  * @author Vlad Mihalcea
  */
 public class BasicTypeElementCollectionTest extends BaseEntityManagerFunctionalTestCase {
-
-	private static final Logger log = Logger.getLogger( BasicTypeCollectionTest.class );
 
 	@Override
 	protected Class<?>[] getAnnotatedClasses() {
@@ -35,7 +33,7 @@ public class BasicTypeElementCollectionTest extends BaseEntityManagerFunctionalT
 	}
 
 	@Override
-	public void buildEntityManagerFactory() throws Exception {
+	public void buildEntityManagerFactory() {
 		super.buildEntityManagerFactory();
 		doInJPA( this::entityManagerFactory, entityManager -> {
 			Person person = new Person();
@@ -92,9 +90,14 @@ public class BasicTypeElementCollectionTest extends BaseEntityManagerFunctionalT
 		@ElementCollection
 		private List<String> phones = new ArrayList<>();
 
+		//Getters and setters are omitted for brevity
+
+	//end::collections-collection-proxy-entity-example[]
+
 		public List<String> getPhones() {
 			return phones;
 		}
+	//tag::collections-collection-proxy-entity-example[]
 	}
 	//end::collections-collection-proxy-entity-example[]
 }

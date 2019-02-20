@@ -4,29 +4,32 @@
  * License: GNU Lesser General Public License (LGPL), version 2.1 or later.
  * See the lgpl.txt file in the root directory or <http://www.gnu.org/licenses/lgpl-2.1.html>.
  */
+
+apply from: rootProject.file( 'gradle/published-java-module.gradle' )
 apply plugin: 'version-injection'
 apply plugin: 'org.hibernate.build.gradle.xjc'
 
-dependencies {
-	testCompile libraries.junit
-    testCompile libraries.jpa
-    testCompile project( ':hibernate-core' ) 
-	testCompile libraries.slf4j_api
-	testCompile libraries.slf4j_log4j
-}
-
-mavenPom {
-    name = 'Hibernate JPA 2 Metamodel Generator'
-    description = 'Annotation Processor to generate JPA 2 static metamodel classes'
-}
-
-versionInjection {
-    into( 'org.hibernate.jpamodelgen.Version', 'getVersionString' )
-}
+description = 'Annotation Processor to generate JPA 2 static metamodel classes'
 
 ext {
 	xjcTargetDir = file( "${buildDir}/generated-src/xjc/main" )
 	xsdDir = file( "${projectDir}/src/main/xsd" )
+}
+
+dependencies {
+
+    // JAXB
+    compile( libraries.jaxb_api )
+    compile( libraries.jaxb_runtime )
+    xjc( libraries.jaxb_runtime )
+    xjc( libraries.jaxb_xjc )
+    xjc( libraries.jaxb2_basics )
+    xjc( libraries.jaxb2_basics_ant )
+    xjc( libraries.activation )
+
+    testCompile libraries.junit
+    testCompile libraries.jpa
+    testCompile project( ':hibernate-core' )
 }
 
 sourceSets.main {
@@ -40,14 +43,6 @@ compileTestJava {
     ]
 }
 
-jar {
-	manifest {
-		attributes 'Implementation-Title'     : name,
-		           'Implementation-Version'   : version,
-		           'Specification-Title'      : name,
-		           'Specification-Version'    : version
-	}
-}
 
 task jaxb {
     // configure Gradle up-to-date checking

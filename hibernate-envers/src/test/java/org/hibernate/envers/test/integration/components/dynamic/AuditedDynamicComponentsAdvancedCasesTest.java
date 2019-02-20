@@ -16,6 +16,7 @@ import java.util.Set;
 
 import org.hibernate.QueryException;
 import org.hibernate.Session;
+import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.envers.exception.AuditException;
 import org.hibernate.envers.query.AuditEntity;
 import org.hibernate.envers.test.BaseEnversFunctionalTestCase;
@@ -24,6 +25,8 @@ import org.hibernate.envers.test.Priority;
 import org.hibernate.testing.TestForIssue;
 import org.junit.Test;
 import junit.framework.Assert;
+
+import static org.hibernate.testing.junit4.ExtraAssertions.assertTyping;
 
 /**
  * @author Lukasz Zuchowski (author at zuchos dot com)
@@ -45,6 +48,12 @@ public class AuditedDynamicComponentsAdvancedCasesTest extends BaseEnversFunctio
 	public static final String INTERNAL_SET_OF_COMPONENTS = "internalSetOfComponents";
 	public static final String AGE_USER_TYPE = "ageUserType";
 	public static final String INTERNAL_LIST_OF_USER_TYPES = "internalListOfUserTypes";
+
+	@Override
+	protected void addSettings(Map settings) {
+		super.addSettings( settings );
+		settings.put( AvailableSettings.JPA_TRANSACTION_COMPLIANCE, "false" );
+	}
 
 	@Override
 	protected String[] getMappings() {
@@ -350,11 +359,12 @@ public class AuditedDynamicComponentsAdvancedCasesTest extends BaseEnversFunctio
 			//then
 			Assert.fail();
 		}
-		catch ( QueryException e ) {
-
-		}
 		catch ( Exception e ) {
-			Assert.fail();
+			if ( getSession().getTransaction().isActive() ) {
+				getSession().getTransaction().rollback();
+			}
+
+			assertTyping( IllegalArgumentException.class, e );
 		}
 
 		try {
@@ -367,16 +377,17 @@ public class AuditedDynamicComponentsAdvancedCasesTest extends BaseEnversFunctio
 					.getResultList();
 			Assert.fail();
 		}
-		catch ( AuditException e ) {
+		catch ( Exception e ) {
+			if ( getSession().getTransaction().isActive() ) {
+				getSession().getTransaction().rollback();
+			}
+
+			assertTyping( AuditException.class, e );
 			Assert.assertEquals(
 					"This type of relation (org.hibernate.envers.test.integration.components.dynamic.AdvancedEntity.dynamicConfiguration_internalMapWithEntities) isn't supported and can't be used in queries.",
 					e.getMessage()
 			);
 		}
-		catch ( Exception e ) {
-			Assert.fail();
-		}
-
 	}
 
 	@Test

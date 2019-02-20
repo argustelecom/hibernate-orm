@@ -6,6 +6,12 @@
  */
 package org.hibernate.dialect;
 
+import java.io.Serializable;
+import java.sql.DatabaseMetaData;
+import java.sql.SQLException;
+import java.sql.Types;
+import java.util.Locale;
+
 import org.hibernate.JDBCException;
 import org.hibernate.LockMode;
 import org.hibernate.MappingException;
@@ -31,7 +37,7 @@ import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.dialect.pagination.LimitHelper;
 import org.hibernate.engine.jdbc.env.spi.NameQualifierSupport;
 import org.hibernate.engine.spi.RowSelection;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.exception.spi.TemplatedViolatedConstraintNameExtracter;
 import org.hibernate.exception.spi.ViolatedConstraintNameExtracter;
 import org.hibernate.hql.spi.id.IdTableSupportStandardImpl;
@@ -43,13 +49,12 @@ import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.JdbcExceptionHelper;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.persister.entity.Lockable;
+import org.hibernate.tool.schema.extract.internal.SequenceInformationExtractorHANADatabaseImpl;
+import org.hibernate.tool.schema.extract.internal.SequenceInformationExtractorHSQLDBDatabaseImpl;
+import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
 import org.hibernate.type.StandardBasicTypes;
-import org.jboss.logging.Logger;
 
-import java.io.Serializable;
-import java.sql.SQLException;
-import java.sql.Types;
-import java.util.Locale;
+import org.jboss.logging.Logger;
 
 /**
  * An SQL dialect compatible with HSQLDB (HyperSQL).
@@ -238,6 +243,7 @@ public class HSQLDialect extends Dialect {
 		registerFunction( "round", new StandardSQLFunction( "round" ) );
 		registerFunction( "roundmagic", new StandardSQLFunction( "roundmagic" ) );
 		registerFunction( "truncate", new StandardSQLFunction( "truncate" ) );
+		registerFunction( "trunc", new StandardSQLFunction( "trunc" ) );
 
 		registerFunction( "ceiling", new StandardSQLFunction( "ceiling" ) );
 		registerFunction( "floor", new StandardSQLFunction( "floor" ) );
@@ -307,8 +313,16 @@ public class HSQLDialect extends Dialect {
 		return hsqldbVersion < 200;
 	}
 
+	// Note : HSQLDB actually supports [IF EXISTS] before AND after the <tablename>
+	// But as CASCADE has to be AFTER IF EXISTS in case it's after the tablename, 
+	// We put the IF EXISTS before the tablename to be able to add CASCADE after.
 	@Override
 	public boolean supportsIfExistsAfterTableName() {
+		return false;
+	}
+
+	@Override
+	public boolean supportsIfExistsBeforeTableName() {
 		return true;
 	}
 
@@ -350,7 +364,7 @@ public class HSQLDialect extends Dialect {
 
 	@Override
 	protected String getDropSequenceString(String sequenceName) {
-		return "drop sequence " + sequenceName;
+		return "drop sequence " + sequenceName + " if exists";
 	}
 
 	@Override
@@ -366,7 +380,12 @@ public class HSQLDialect extends Dialect {
 	@Override
 	public String getQuerySequencesString() {
 		// this assumes schema support, which is present in 1.8.0 and later...
-		return "select sequence_name from information_schema.system_sequences";
+		return "select * from information_schema.sequences";
+	}
+
+	@Override
+	public SequenceInformationExtractor getSequenceInformationExtractor() {
+		return SequenceInformationExtractorHSQLDBDatabaseImpl.INSTANCE;
 	}
 
 	@Override
@@ -606,7 +625,8 @@ public class HSQLDialect extends Dialect {
 			super( lockable, lockMode );
 		}
 
-		public void lock(Serializable id, Object version, Object object, int timeout, SessionImplementor session)
+		@Override
+		public void lock(Serializable id, Object version, Object object, int timeout, SharedSessionContractImplementor session)
 				throws StaleObjectStateException, JDBCException {
 			if ( getLockMode().greaterThan( LockMode.READ ) ) {
 				LOG.hsqldbSupportsOnlyReadCommittedIsolation();
@@ -666,5 +686,21 @@ public class HSQLDialect extends Dialect {
 	@Override
 	public NameQualifierSupport getNameQualifierSupport() {
 		return NameQualifierSupport.SCHEMA;
+	}
+
+	@Override
+	public boolean supportsNamedParameters(DatabaseMetaData databaseMetaData) throws SQLException {
+		return false;
+	}
+
+	// Do not drop constraints explicitly, just do this by cascading instead.
+	@Override
+	public boolean dropConstraints() {
+		return false;
+	}
+
+	@Override
+	public String getCascadeConstraintsString() {
+		return " CASCADE ";
 	}
 }

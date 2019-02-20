@@ -11,13 +11,16 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import javax.persistence.AttributeNode;
 import javax.persistence.EntityGraph;
 import javax.persistence.Subgraph;
 
 import org.hibernate.QueryException;
 import org.hibernate.engine.internal.JoinSequence;
+import org.hibernate.graph.GraphSemantic;
+import org.hibernate.graph.RootGraph;
+import org.hibernate.graph.spi.AppliedGraph;
+import org.hibernate.graph.spi.RootGraphImplementor;
 import org.hibernate.hql.internal.ast.HqlSqlWalker;
 import org.hibernate.hql.internal.ast.tree.FromClause;
 import org.hibernate.hql.internal.ast.tree.FromElement;
@@ -36,11 +39,30 @@ import org.hibernate.type.Type;
  *
  * @author Brett Meyer
  */
-public class EntityGraphQueryHint {
-	private final EntityGraph<?> originEntityGraph;
+public class EntityGraphQueryHint implements AppliedGraph {
+	private final RootGraphImplementor<?> graph;
+	private final GraphSemantic semantic;
 
-	public EntityGraphQueryHint(EntityGraph<?> originEntityGraph) {
-		this.originEntityGraph = originEntityGraph;
+	public EntityGraphQueryHint(String hintName, EntityGraph<?> graph) {
+		assert hintName != null;
+
+		this.semantic = GraphSemantic.fromJpaHintName( hintName );
+		this.graph = (RootGraphImplementor<?>) graph;
+	}
+
+	public EntityGraphQueryHint(RootGraphImplementor<?> graph, GraphSemantic semantic	) {
+		this.semantic = semantic;
+		this.graph = graph;
+	}
+
+	@Override
+	public GraphSemantic getSemantic() {
+		return semantic;
+	}
+
+	@Override
+	public RootGraphImplementor<?> getGraph() {
+		return graph;
 	}
 
 	public List<FromElement> toFromElements(FromClause fromClause, HqlSqlWalker walker) {
@@ -54,7 +76,7 @@ public class EntityGraphQueryHint {
 		}
 
 		return getFromElements(
-				fromClause.getLevel() == FromClause.ROOT_LEVEL ? originEntityGraph.getAttributeNodes():
+				fromClause.getLevel() == FromClause.ROOT_LEVEL ? graph.getAttributeNodes():
 					Collections.emptyList(),
 				fromClause.getFromElement(),
 				fromClause,
@@ -156,5 +178,29 @@ public class EntityGraphQueryHint {
 		}
 
 		return fromElements;
+	}
+
+	/**
+	 * @deprecated (5.4) Use {@link #getGraph}
+	 */
+	@Deprecated
+	public EntityGraph<?> getOriginEntityGraph() {
+		return getGraph();
+	}
+
+	/**
+	 * @deprecated (5.4) Use {@link #getSemantic}
+	 */
+	@Deprecated
+	public GraphSemantic getGraphSemantic() {
+		return getSemantic();
+	}
+
+	/**
+	 * @deprecated (5.4) Use {@link #getSemantic}
+	 */
+	@Deprecated
+	public String getHintName() {
+		return getGraphSemantic().getJpaHintName();
 	}
 }

@@ -6,13 +6,16 @@
  */
 package org.hibernate.envers.internal.entities;
 
+import java.util.Objects;
+
 import org.hibernate.envers.ModificationStore;
-import org.hibernate.internal.util.compare.EqualsHelper;
+import org.hibernate.type.Type;
 
 /**
  * Holds information on a property that is audited.
  *
  * @author Adam Warski (adam at warski dot org)
+ * @author Chris Cranford
  */
 public class PropertyData {
 	private final String name;
@@ -24,6 +27,11 @@ public class PropertyData {
 	private final ModificationStore store;
 	private boolean usingModifiedFlag;
 	private String modifiedFlagName;
+	// Synthetic properties are ones which are not part of the actual java model.
+	// They're properties used for bookkeeping by Hibernate
+	private boolean synthetic;
+	private Type propertyType;
+	private Class<?> virtualReturnClass;
 
 	/**
 	 * Copies the given property data, except the name.
@@ -36,6 +44,12 @@ public class PropertyData {
 		this.beanName = propertyData.beanName;
 		this.accessType = propertyData.accessType;
 		this.store = propertyData.store;
+
+		this.usingModifiedFlag = propertyData.usingModifiedFlag;
+		this.modifiedFlagName = propertyData.modifiedFlagName;
+		this.synthetic = propertyData.synthetic;
+		this.propertyType = propertyData.propertyType;
+		this.virtualReturnClass = propertyData.virtualReturnClass;
 	}
 
 	/**
@@ -51,6 +65,11 @@ public class PropertyData {
 		this.store = store;
 	}
 
+	private PropertyData(String name, String beanName, String accessType, ModificationStore store, Type propertyType) {
+		this( name, beanName, accessType, store );
+		this.propertyType = propertyType;
+	}
+
 	/**
 	 * @param name Name of the property.
 	 * @param beanName Name of the property in the bean.
@@ -64,10 +83,39 @@ public class PropertyData {
 			String accessType,
 			ModificationStore store,
 			boolean usingModifiedFlag,
-			String modifiedFlagName) {
+			String modifiedFlagName,
+			boolean synthetic) {
 		this( name, beanName, accessType, store );
 		this.usingModifiedFlag = usingModifiedFlag;
 		this.modifiedFlagName = modifiedFlagName;
+		this.synthetic = synthetic;
+	}
+
+	public PropertyData(
+			String name,
+			String beanName,
+			String accessType,
+			ModificationStore store,
+			boolean usingModifiedFlag,
+			String modifiedFlagName,
+			boolean synthetic,
+			Type propertyType) {
+		this( name, beanName, accessType, store, usingModifiedFlag, modifiedFlagName, synthetic, propertyType, null );
+	}
+
+	public PropertyData(
+			String name,
+			String beanName,
+			String accessType,
+			ModificationStore store,
+			boolean usingModifiedFlag,
+			String modifiedFlagName,
+			boolean synthetic,
+			Type propertyType,
+			Class<?> virtualReturnClass) {
+		this( name, beanName, accessType, store, usingModifiedFlag, modifiedFlagName, synthetic );
+		this.propertyType = propertyType;
+		this.virtualReturnClass = virtualReturnClass;
 	}
 
 	public String getName() {
@@ -82,6 +130,10 @@ public class PropertyData {
 		return accessType;
 	}
 
+	 /**
+	 * @deprecated since 5.2, to be removed in 6.0 with no replacement.
+	 */
+	@Deprecated
 	public ModificationStore getStore() {
 		return store;
 	}
@@ -92,6 +144,18 @@ public class PropertyData {
 
 	public String getModifiedFlagPropertyName() {
 		return modifiedFlagName;
+	}
+
+	public boolean isSynthetic() {
+		return synthetic;
+	}
+
+	public Type getType() {
+		return propertyType;
+	}
+
+	public Class<?> getVirtualReturnClass() {
+		return virtualReturnClass;
 	}
 
 	@Override
@@ -106,9 +170,10 @@ public class PropertyData {
 		final PropertyData that = (PropertyData) o;
 		return usingModifiedFlag == that.usingModifiedFlag
 				&& store == that.store
-				&& EqualsHelper.equals( accessType, that.accessType )
-				&& EqualsHelper.equals( beanName, that.beanName )
-				&& EqualsHelper.equals( name, that.name );
+				&& Objects.equals( accessType, that.accessType )
+				&& Objects.equals( beanName, that.beanName )
+				&& Objects.equals( name, that.name )
+				&& Objects.equals( synthetic, that.synthetic );
 	}
 
 	@Override
@@ -118,6 +183,17 @@ public class PropertyData {
 		result = 31 * result + (accessType != null ? accessType.hashCode() : 0);
 		result = 31 * result + (store != null ? store.hashCode() : 0);
 		result = 31 * result + (usingModifiedFlag ? 1 : 0);
+		result = 31 * result + (synthetic ? 1 : 0);
 		return result;
+	}
+
+	public static PropertyData forProperty(String propertyName, Type propertyType) {
+		return new PropertyData(
+				propertyName,
+				null,
+				null,
+				null,
+				propertyType
+		);
 	}
 }

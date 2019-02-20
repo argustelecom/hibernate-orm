@@ -10,19 +10,20 @@
  */
 package org.hibernate.spatial.testing.dialects.h2geodb;
 
-import com.vividsolutions.jts.geom.Coordinate;
-import com.vividsolutions.jts.geom.Geometry;
+import org.hibernate.spatial.testing.JTSGeometryEquality;
 
-import org.hibernate.spatial.testing.GeometryEquality;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
 
 /**
  * Extends the test for {@link Geometry} equality, because GeoDB uses JTS
  * Geometry objects, which cannot be cast to {@link org.hibernate.spatial.jts.mgeom.MGeometry} objects.
  *
  * @author Jan Boonen, Geodan IT b.v.
+ * @deprecated This should no longer be necesseary
  */
-@Deprecated //NO LONGER REQUIRED
-public class GeoDBGeometryEquality extends GeometryEquality {
+@Deprecated
+public class GeoDBGeometryEquality extends JTSGeometryEquality {
 
 	@Override
 	public boolean test(Geometry geom1, Geometry geom2) {

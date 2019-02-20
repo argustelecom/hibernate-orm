@@ -12,14 +12,17 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Properties;
+import java.util.Objects;
 
 import org.hibernate.FetchMode;
 import org.hibernate.MappingException;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
+import org.hibernate.boot.spi.MetadataBuildingContext;
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.engine.spi.ExecuteUpdateResultCheckStyle;
 import org.hibernate.engine.spi.Mapping;
 import org.hibernate.internal.FilterConfiguration;
+import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.type.CollectionType;
@@ -85,6 +88,14 @@ public abstract class Collection implements Fetchable, Value, Filterable {
 
 	private String loaderName;
 
+	protected Collection(MetadataBuildingContext buildingContext, PersistentClass owner) {
+		this(buildingContext.getMetadataCollector(), owner);
+	}
+
+	/**
+	 * @deprecated Use {@link Collection#Collection(MetadataBuildingContext, PersistentClass)} instead.
+	 */
+	@Deprecated
 	protected Collection(MetadataImplementor metadata, PersistentClass owner) {
 		this.metadata = metadata;
 		this.owner = owner;
@@ -293,12 +304,6 @@ public abstract class Collection implements Fetchable, Value, Filterable {
 		assert getKey() != null : "Collection key not bound : " + getRole();
 		assert getElement() != null : "Collection element not bound : " + getRole();
 
-		if ( getKey().isCascadeDeleteEnabled() && ( !isInverse() || !isOneToMany() ) ) {
-			throw new MappingException(
-					"only inverse one-to-many associations may use on-delete=\"cascade\": "
-							+ getRole()
-			);
-		}
 		if ( !getKey().isValid( mapping ) ) {
 			throw new MappingException(
 					"collection foreign key mapping has wrong number of columns: "
@@ -319,11 +324,17 @@ public abstract class Collection implements Fetchable, Value, Filterable {
 		checkColumnDuplication();
 	}
 
-	private void checkColumnDuplication(java.util.Set distinctColumns, Iterator columns)
+	private void checkColumnDuplication(java.util.Set distinctColumns, Value value)
 			throws MappingException {
-		while ( columns.hasNext() ) {
-			Selectable s = (Selectable) columns.next();
-			if ( !s.isFormula() ) {
+		final boolean[] insertability = value.getColumnInsertability();
+		final boolean[] updatability = value.getColumnUpdateability();
+		final Iterator<Selectable> iterator = value.getColumnIterator();
+		int i = 0;
+		while ( iterator.hasNext() ) {
+			Selectable s = iterator.next();
+			// exclude formulas and coluns that are not insertable or updatable
+			// since these values can be be repeated (HHH-5393)
+			if ( !s.isFormula() && ( insertability[i] || updatability[i] ) ) {
 				Column col = (Column) s;
 				if ( !distinctColumns.add( col.getName() ) ) {
 					throw new MappingException(
@@ -334,28 +345,27 @@ public abstract class Collection implements Fetchable, Value, Filterable {
 					);
 				}
 			}
+			i++;
 		}
 	}
 
 	private void checkColumnDuplication() throws MappingException {
 		HashSet cols = new HashSet();
-		checkColumnDuplication( cols, getKey().getColumnIterator() );
+		checkColumnDuplication( cols, getKey() );
 		if ( isIndexed() ) {
 			checkColumnDuplication(
-					cols, ( (IndexedCollection) this )
-							.getIndex()
-							.getColumnIterator()
+					cols,
+					( (IndexedCollection) this ).getIndex()
 			);
 		}
 		if ( isIdentified() ) {
 			checkColumnDuplication(
-					cols, ( (IdentifierCollection) this )
-							.getIdentifier()
-							.getColumnIterator()
+					cols,
+					( (IdentifierCollection) this ).getIdentifier()
 			);
 		}
 		if ( !isOneToMany() ) {
-			checkColumnDuplication( cols, getElement().getColumnIterator() );
+			checkColumnDuplication( cols, getElement() );
 		}
 	}
 
@@ -376,7 +386,7 @@ public abstract class Collection implements Fetchable, Value, Filterable {
 			return getDefaultCollectionType();
 		}
 		else {
-			return metadata.getTypeResolver()
+			return getMetadata().getTypeConfiguration().getTypeResolver()
 					.getTypeFactory()
 					.customCollection( typeName, typeParameters, role, referencedPropertyName );
 		}
@@ -403,6 +413,27 @@ public abstract class Collection implements Fetchable, Value, Filterable {
 
 	public boolean isValid(Mapping mapping) throws MappingException {
 		return true;
+	}
+
+	@Override
+	public boolean isSame(Value other) {
+		return this == other || other instanceof Collection && isSame( (Collection) other );
+	}
+
+	protected static boolean isSame(Value v1, Value v2) {
+		return v1 == v2 || v1 != null && v2 != null && v1.isSame( v2 );
+	}
+
+	public boolean isSame(Collection other) {
+		return this == other || isSame( key, other.key )
+				&& isSame( element, other.element )
+				&& Objects.equals( collectionTable, other.collectionTable )
+				&& Objects.equals( where, other.where )
+				&& Objects.equals( manyToManyWhere, other.manyToManyWhere )
+				&& Objects.equals( referencedPropertyName, other.referencedPropertyName )
+				&& Objects.equals( mappedByProperty, other.mappedByProperty )
+				&& Objects.equals( typeName, other.typeName )
+				&& Objects.equals( typeParameters, other.typeParameters );
 	}
 
 	private void createForeignKeys() throws MappingException {
@@ -439,7 +470,7 @@ public abstract class Collection implements Fetchable, Value, Filterable {
 	}
 
 	public void setCacheRegionName(String cacheRegionName) {
-		this.cacheRegionName = cacheRegionName;
+		this.cacheRegionName = StringHelper.nullIfEmpty( cacheRegionName );
 	}
 
 

@@ -14,11 +14,14 @@ import org.hibernate.dialect.function.SQLFunctionTemplate;
 import org.hibernate.dialect.function.StandardSQLFunction;
 import org.hibernate.dialect.function.VarArgsSQLFunction;
 import org.hibernate.dialect.pagination.FirstLimitHandler;
+import org.hibernate.dialect.pagination.LegacyFirstLimitHandler;
 import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.hql.spi.id.IdTableSupportStandardImpl;
 import org.hibernate.hql.spi.id.MultiTableBulkIdStrategy;
 import org.hibernate.hql.spi.id.global.GlobalTemporaryTableBulkIdStrategy;
 import org.hibernate.hql.spi.id.local.AfterUseAction;
+import org.hibernate.tool.schema.extract.internal.SequenceNameExtractorImpl;
+import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
 import org.hibernate.type.StandardBasicTypes;
 
 /**
@@ -47,6 +50,7 @@ import org.hibernate.type.StandardBasicTypes;
  */
 @SuppressWarnings("deprecation")
 public class IngresDialect extends Dialect {
+
 	/**
 	 * Constructs a IngresDialect
 	 */
@@ -214,12 +218,24 @@ public class IngresDialect extends Dialect {
 	}
 
 	@Override
+	public SequenceInformationExtractor getSequenceInformationExtractor() {
+		return SequenceNameExtractorImpl.INSTANCE;
+	}
+
+	@Override
 	public String getLowercaseFunction() {
 		return "lowercase";
 	}
 
 	@Override
 	public LimitHandler getLimitHandler() {
+		if ( isLegacyLimitHandlerBehaviorEnabled() ) {
+			return LegacyFirstLimitHandler.INSTANCE;
+		}
+		return getDefaultLimitHandler();
+	}
+
+	protected LimitHandler getDefaultLimitHandler() {
 		return FirstLimitHandler.INSTANCE;
 	}
 

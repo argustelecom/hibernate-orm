@@ -6,9 +6,10 @@
  */
 package org.hibernate.envers.configuration.internal;
 
-import org.dom4j.Document;
-import org.dom4j.DocumentException;
-import org.dom4j.Element;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+
 import org.hibernate.MappingException;
 import org.hibernate.annotations.common.reflection.ReflectionManager;
 import org.hibernate.boot.spi.MetadataImplementor;
@@ -24,9 +25,9 @@ import org.hibernate.envers.strategy.AuditStrategy;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.service.ServiceRegistry;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import org.dom4j.Document;
+import org.dom4j.DocumentException;
+import org.dom4j.Element;
 
 /**
  * @author Adam Warski (adam at warski dot org)
@@ -50,7 +51,7 @@ public class EntitiesConfigurator {
 				.iterator();
 
 		final ClassesAuditingData classesAuditingData = new ClassesAuditingData();
-		final Map<PersistentClass, EntityXmlMappingData> xmlMappings = new HashMap<PersistentClass, EntityXmlMappingData>();
+		final Map<PersistentClass, EntityXmlMappingData> xmlMappings = new HashMap<>();
 
 		// Reading metadata from annotations
 		while ( classes.hasNext() ) {
@@ -60,10 +61,10 @@ public class EntitiesConfigurator {
 			if (pc.getClassName() != null) {
 				// Collecting information from annotations on the persistent class pc
 				final AnnotationsMetadataReader annotationsMetadataReader =
-						new AnnotationsMetadataReader(globalConfiguration, reflectionManager, pc);
+						new AnnotationsMetadataReader( globalConfiguration, reflectionManager, pc );
 				final ClassAuditingData auditData = annotationsMetadataReader.getAuditData();
 
-				classesAuditingData.addClassAuditingData(pc, auditData);
+				classesAuditingData.addClassAuditingData( pc, auditData );
 			}
 		}
 

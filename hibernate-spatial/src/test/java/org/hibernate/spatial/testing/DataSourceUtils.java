@@ -24,15 +24,15 @@ import java.util.Map;
 import java.util.Properties;
 import javax.sql.DataSource;
 
+import org.hibernate.spatial.HSMessageLogger;
+
+import org.jboss.logging.Logger;
+
 import org.apache.commons.dbcp.BasicDataSource;
 import org.geolatte.geom.Geometry;
 import org.geolatte.geom.codec.Wkt;
 import org.geolatte.geom.codec.WktDecodeException;
 import org.geolatte.geom.codec.WktDecoder;
-
-import org.jboss.logging.Logger;
-
-import org.hibernate.spatial.HSMessageLogger;
 
 /**
  * <p>Unit testsuite-suite support class.</p>
@@ -74,7 +74,12 @@ public class DataSourceUtils {
 	 * @param jdbcPass
 	 * @param sqlExpressionTemplate SQLExpressionTemplate object that generates SQL statements for this database
 	 */
-	public DataSourceUtils(String jdbcDriver, String jdbcUrl, String jdbcUser, String jdbcPass, SQLExpressionTemplate sqlExpressionTemplate) {
+	public DataSourceUtils(
+			String jdbcDriver,
+			String jdbcUrl,
+			String jdbcUser,
+			String jdbcPass,
+			SQLExpressionTemplate sqlExpressionTemplate) {
 		this.jdbcDriver = jdbcDriver;
 		this.jdbcUrl = jdbcUrl;
 		this.jdbcUser = jdbcUser;
@@ -99,6 +104,14 @@ public class DataSourceUtils {
 		createBasicDataSource();
 	}
 
+	private static int sum(int[] insCounts) {
+		int result = 0;
+		for ( int idx = 0; idx < insCounts.length; idx++ ) {
+			result += insCounts[idx];
+		}
+		return result;
+	}
+
 	private Properties readProperties(String propertyFile) {
 		InputStream is = null;
 		try {
@@ -110,7 +123,7 @@ public class DataSourceUtils {
 			properties.load( is );
 			return properties;
 		}
-		catch ( IOException e ) {
+		catch (IOException e) {
 			throw ( new RuntimeException( e ) );
 		}
 		finally {
@@ -118,7 +131,7 @@ public class DataSourceUtils {
 				try {
 					is.close();
 				}
-				catch ( IOException e ) {
+				catch (IOException e) {
 					//nothing to do
 				}
 			}
@@ -133,7 +146,6 @@ public class DataSourceUtils {
 		bds.setPassword( jdbcPass );
 		dataSource = bds;
 	}
-
 
 	/**
 	 * Closes the connections to the database.
@@ -190,7 +202,7 @@ public class DataSourceUtils {
 					cn.close();
 				}
 			}
-			catch ( SQLException e ) {
+			catch (SQLException e) {
 				// nothing to do
 			}
 		}
@@ -212,18 +224,21 @@ public class DataSourceUtils {
 			stmt.close();
 			LOG.info( "Loaded " + sum( insCounts ) + " rows." );
 		}
+		catch (SQLException e) {
+			e.printStackTrace();
+			throw e;
+		}
 		finally {
 			try {
 				if ( cn != null ) {
 					cn.close();
 				}
 			}
-			catch ( SQLException e ) {
-				// nothing to do
+			catch (SQLException e) {
+				e.printStackTrace();
 			}
 		}
 	}
-
 
 	/**
 	 * Parses the content of a file into an executable SQL statement.
@@ -255,7 +270,9 @@ public class DataSourceUtils {
 			return sw.toString();
 		}
 		finally {
-			if (reader != null) reader.close();
+			if ( reader != null ) {
+				reader.close();
+			}
 			is.close();
 		}
 	}
@@ -287,7 +304,7 @@ public class DataSourceUtils {
 					cn.close();
 				}
 			}
-			catch ( SQLException e ) {
+			catch (SQLException e) {
 			} //do nothing.
 		}
 	}
@@ -323,7 +340,7 @@ public class DataSourceUtils {
 			}
 
 		}
-		catch ( SQLException e ) {
+		catch (SQLException e) {
 			e.printStackTrace();
 		}
 		finally {
@@ -331,14 +348,16 @@ public class DataSourceUtils {
 				if ( results != null ) {
 					results.close();
 				}
-			} catch (SQLException e){
+			}
+			catch (SQLException e) {
 				//nothing to do
 			}
 			try {
 				if ( pstmt != null ) {
 					pstmt.close();
 				}
-			} catch (SQLException e){
+			}
+			catch (SQLException e) {
 				//nothing to do
 			}
 			try {
@@ -346,7 +365,7 @@ public class DataSourceUtils {
 					cn.close();
 				}
 			}
-			catch ( SQLException e ) {
+			catch (SQLException e) {
 				// nothing we can do.
 			}
 		}
@@ -371,7 +390,7 @@ public class DataSourceUtils {
 				try {
 					result.put( testDataElement.id, decoder.decode( testDataElement.wkt ) );
 				}
-				catch ( WktDecodeException e ) {
+				catch (WktDecodeException e) {
 					System.out
 							.println(
 									String.format(
@@ -383,14 +402,6 @@ public class DataSourceUtils {
 					throw new RuntimeException( e );
 				}
 			}
-		}
-		return result;
-	}
-
-	private static int sum(int[] insCounts) {
-		int result = 0;
-		for ( int idx = 0; idx < insCounts.length; idx++ ) {
-			result += insCounts[idx];
 		}
 		return result;
 	}

@@ -9,6 +9,8 @@ package org.hibernate.procedure;
 import javax.persistence.ParameterMode;
 import javax.persistence.TemporalType;
 
+import org.hibernate.query.QueryParameter;
+import org.hibernate.query.procedure.ProcedureParameter;
 import org.hibernate.type.Type;
 
 /**
@@ -16,13 +18,14 @@ import org.hibernate.type.Type;
  *
  * @author Steve Ebersole
  */
-public interface ParameterRegistration<T> {
+public interface ParameterRegistration<T> extends ProcedureParameter<T> {
 	/**
 	 * The name under which this parameter was registered.  Can be {@code null} which should indicate that
 	 * positional registration was used (and therefore {@link #getPosition()} should return non-null.
 	 *
 	 * @return The name;
 	 */
+	@Override
 	String getName();
 
 	/**
@@ -31,15 +34,19 @@ public interface ParameterRegistration<T> {
 	 *
 	 * @return The name;
 	 */
+	@Override
 	Integer getPosition();
 
 	/**
-	 * Obtain the Java type of parameter.  This is used to guess the Hibernate type (unless {@link #setHibernateType}
-	 * is called explicitly).
+	 * Return the Java type of the parameter.
 	 *
-	 * @return The parameter Java type.
+	 * @return The Java type of the parameter.
+	 * @deprecated Call {@link #getParameterType()} instead.
 	 */
-	Class<T> getType();
+	@Deprecated
+	default Class<T> getType() {
+		return getParameterType();
+	}
 
 	/**
 	 * Retrieves the parameter "mode" which describes how the parameter is defined in the actual database procedure
@@ -47,6 +54,7 @@ public interface ParameterRegistration<T> {
 	 *
 	 * @return The parameter mode.
 	 */
+	@Override
 	ParameterMode getMode();
 
 	/**
@@ -65,6 +73,7 @@ public interface ParameterRegistration<T> {
 	 *
 	 * @param enabled {@code true} indicates that the NULL should be passed; {@code false} indicates it should not.
 	 */
+	@Override
 	void enablePassingNulls(boolean enabled);
 
 	/**

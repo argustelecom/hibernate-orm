@@ -8,6 +8,7 @@ package org.hibernate.envers.internal.entities.mapper.relation;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.envers.RevisionType;
@@ -17,6 +18,7 @@ import org.hibernate.envers.internal.entities.mapper.id.IdMapper;
 import org.hibernate.envers.internal.reader.AuditReaderImplementor;
 import org.hibernate.envers.internal.tools.EntityTools;
 import org.hibernate.envers.internal.tools.query.Parameters;
+import org.hibernate.persister.entity.EntityPersister;
 
 /**
  * @author Adam Warski (adam at warski dot org)
@@ -45,7 +47,7 @@ public class ToOneIdMapper extends AbstractToOneMapper {
 			Map<String, Object> data,
 			Object newObj,
 			Object oldObj) {
-		final HashMap<String, Object> newData = new HashMap<String, Object>();
+		final HashMap<String, Object> newData = new HashMap<>();
 
 		// If this property is originally non-insertable, but made insertable because it is in a many-to-one "fake"
 		// bi-directional relation, we always store the "old", unchaged data, to prevent storing changes made
@@ -81,8 +83,37 @@ public class ToOneIdMapper extends AbstractToOneMapper {
 	}
 
 	protected boolean checkModified(SessionImplementor session, Object newObj, Object oldObj) {
-		//noinspection SimplifiableConditionalExpression
-		return nonInsertableFake ? false : !EntityTools.entitiesEqual( session, referencedEntityName, newObj, oldObj );
+		if ( nonInsertableFake ) {
+			return false;
+		}
+
+		if ( newObj == null || oldObj == null || newObj.getClass().equals( oldObj.getClass() ) ) {
+			return !EntityTools.entitiesEqual( session, referencedEntityName, newObj, oldObj );
+		}
+
+		// There is a chance that oldObj may reference the identifier of the old entity rather
+		// than the entity instance itself.  This happens under Session#update with a detached
+		// entity because the database snapshot that is used to derive the prior state doesn't
+		// return the entity instances of the to-one associations but only the identifier.
+		//
+		// So here we assume the method was supplied the id and we ask the persister to verify
+		// if the value is the identifier type.  If not, we assume its the entity type and
+		// therefore resolve the identifier from the entity directly prior to simply then
+		// doing the identifier comparison.
+
+		final EntityPersister persister = session.getFactory().getMetamodel().entityPersister( referencedEntityName );
+
+		Object resolvedNewObjectId = newObj;
+		if ( !persister.getIdentifierType().getReturnedClass().isInstance( newObj ) ) {
+			resolvedNewObjectId = EntityTools.getIdentifier( session, referencedEntityName, newObj );
+		}
+
+		Object resolvedOldObjectId = oldObj;
+		if ( !persister.getIdentifierType().getReturnedClass().isInstance( oldObj ) ) {
+			resolvedOldObjectId = EntityTools.getIdentifier( session, referencedEntityName, oldObj );
+		}
+
+		return !Objects.deepEquals( resolvedNewObjectId, resolvedOldObjectId );
 	}
 
 	@Override
@@ -104,7 +135,15 @@ public class ToOneIdMapper extends AbstractToOneMapper {
 				boolean ignoreNotFound = false;
 				if ( !referencedEntity.isAudited() ) {
 					final String referencingEntityName = enversService.getEntitiesConfigurations().getEntityNameForVersionsEntityName( (String) data.get( "$type$" ) );
-					ignoreNotFound = enversService.getEntitiesConfigurations().getRelationDescription( referencingEntityName, getPropertyData().getName() ).isIgnoreNotFound();
+					if ( referencingEntityName == null && primaryKey == null ) {
+						// HHH-11215 - Fix for NPE when Embeddable with ManyToOne inside ElementCollection
+						// an embeddable in an element-collection
+						// todo: perhaps the mapper should account for this instead?
+						ignoreNotFound = true;
+					}
+					else {
+						ignoreNotFound = enversService.getEntitiesConfigurations().getRelationDescription( referencingEntityName, getPropertyData().getName() ).isIgnoreNotFound();
+					}
 				}
 				if ( ignoreNotFound ) {
 					// Eagerly loading referenced entity to silence potential (in case of proxy)

@@ -11,6 +11,7 @@
 /build
 */build
 testdb
+lib
 
 # IntelliJ specific files/directories
 out
@@ -46,3 +47,8 @@ ObjectStore
 # Additional databases used in local envs
 databases/mysql/
 databases/postgis/
+
+# Vim
+*.swp
+*.swo
+

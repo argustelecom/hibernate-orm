@@ -13,6 +13,7 @@ import java.sql.Types;
 
 import org.hibernate.JDBCException;
 import org.hibernate.NullPrecedence;
+import org.hibernate.PessimisticLockException;
 import org.hibernate.boot.TempTableDdlTransactionHandling;
 import org.hibernate.cfg.Environment;
 import org.hibernate.dialect.function.NoArgSQLFunction;
@@ -22,6 +23,8 @@ import org.hibernate.dialect.identity.MySQLIdentityColumnSupport;
 import org.hibernate.dialect.pagination.AbstractLimitHandler;
 import org.hibernate.dialect.pagination.LimitHandler;
 import org.hibernate.dialect.pagination.LimitHelper;
+import org.hibernate.dialect.unique.MySQLUniqueDelegate;
+import org.hibernate.dialect.unique.UniqueDelegate;
 import org.hibernate.engine.spi.RowSelection;
 import org.hibernate.exception.LockAcquisitionException;
 import org.hibernate.exception.LockTimeoutException;
@@ -31,7 +34,6 @@ import org.hibernate.hql.spi.id.MultiTableBulkIdStrategy;
 import org.hibernate.hql.spi.id.local.AfterUseAction;
 import org.hibernate.hql.spi.id.local.LocalTemporaryTableBulkIdStrategy;
 import org.hibernate.internal.util.JdbcExceptionHelper;
-import org.hibernate.internal.util.StringHelper;
 import org.hibernate.mapping.Column;
 import org.hibernate.type.StandardBasicTypes;
 
@@ -42,6 +44,9 @@ import org.hibernate.type.StandardBasicTypes;
  */
 @SuppressWarnings("deprecation")
 public class MySQLDialect extends Dialect {
+
+	private final UniqueDelegate uniqueDelegate;
+	private MySQLStorageEngine storageEngine;
 
 	private static final LimitHandler LIMIT_HANDLER = new AbstractLimitHandler() {
 		@Override
@@ -61,6 +66,24 @@ public class MySQLDialect extends Dialect {
 	 */
 	public MySQLDialect() {
 		super();
+
+		String storageEngine = Environment.getProperties().getProperty( Environment.STORAGE_ENGINE );
+		if(storageEngine == null) {
+			storageEngine = System.getProperty( Environment.STORAGE_ENGINE );
+		}
+		if(storageEngine == null) {
+			this.storageEngine = getDefaultMySQLStorageEngine();
+		}
+		else if( "innodb".equals( storageEngine.toLowerCase() ) ) {
+			this.storageEngine = InnoDBStorageEngine.INSTANCE;
+		}
+		else if( "myisam".equals( storageEngine.toLowerCase() ) ) {
+			this.storageEngine = MyISAMStorageEngine.INSTANCE;
+		}
+		else {
+			throw new UnsupportedOperationException( "The " + storageEngine + " storage engine is not supported!" );
+		}
+
 		registerColumnType( Types.BIT, "bit" );
 		registerColumnType( Types.BIGINT, "bigint" );
 		registerColumnType( Types.SMALLINT, "smallint" );
@@ -85,6 +108,7 @@ public class MySQLDialect extends Dialect {
 //		registerColumnType( Types.BLOB, 16777215, "mediumblob" );
 //		registerColumnType( Types.BLOB, 65535, "blob" );
 		registerColumnType( Types.CLOB, "longtext" );
+		registerColumnType( Types.NCLOB, "longtext" );
 //		registerColumnType( Types.CLOB, 16777215, "mediumtext" );
 //		registerColumnType( Types.CLOB, 65535, "text" );
 		registerVarcharTypes();
@@ -195,6 +219,8 @@ public class MySQLDialect extends Dialect {
 
 		getDefaultProperties().setProperty( Environment.MAX_FETCH_DEPTH, "2" );
 		getDefaultProperties().setProperty( Environment.STATEMENT_BATCH_SIZE, DEFAULT_BATCH_SIZE );
+
+		uniqueDelegate = new MySQLUniqueDelegate( this );
 	}
 
 	protected void registerVarcharTypes() {
@@ -222,8 +248,8 @@ public class MySQLDialect extends Dialect {
 			String referencedTable,
 			String[] primaryKey,
 			boolean referencesPrimaryKey) {
-		final String cols = StringHelper.join( ", ", foreignKey );
-		final String referencedCols = StringHelper.join( ", ", primaryKey );
+		final String cols = String.join( ", ", foreignKey );
+		final String referencedCols = String.join( ", ", primaryKey );
 		return String.format(
 				" add constraint %s foreign key (%s) references %s (%s)",
 				constraintName,
@@ -304,11 +330,6 @@ public class MySQLDialect extends Dialect {
 	}
 
 	@Override
-	public boolean supportsCascadeDelete() {
-		return false;
-	}
-
-	@Override
 	public String getTableComment(String comment) {
 		return " comment='" + comment + "'";
 	}
@@ -340,6 +361,8 @@ public class MySQLDialect extends Dialect {
 	@Override
 	public String getCastTypeName(int code) {
 		switch ( code ) {
+			case Types.BOOLEAN:
+				return "char";
 			case Types.INTEGER:
 			case Types.BIGINT:
 			case Types.SMALLINT:
@@ -417,6 +440,11 @@ public class MySQLDialect extends Dialect {
 			isResultSet = ps.getMoreResults();
 		}
 		return ps.getResultSet();
+	}
+
+	@Override
+	public UniqueDelegate getUniqueDelegate() {
+		return uniqueDelegate;
 	}
 
 	@Override
@@ -498,6 +526,16 @@ public class MySQLDialect extends Dialect {
 		return new SQLExceptionConversionDelegate() {
 			@Override
 			public JDBCException convert(SQLException sqlException, String message, String sql) {
+				switch ( sqlException.getErrorCode() ) {
+					case 1205: {
+						return new PessimisticLockException( message, sqlException, sql );
+					}
+					case 1207:
+					case 1206: {
+						return new LockAcquisitionException( message, sqlException, sql );
+					}
+				}
+
 				final String sqlState = JdbcExceptionHelper.extractSqlState( sqlException );
 
 				if ( "41000".equals( sqlState ) ) {
@@ -526,5 +564,38 @@ public class MySQLDialect extends Dialect {
 	@Override
 	public boolean isJdbcLogWarningsEnabledByDefault() {
 		return false;
+	}
+
+	@Override
+	public boolean supportsCascadeDelete() {
+		return storageEngine.supportsCascadeDelete();
+	}
+
+	@Override
+	public String getTableTypeString() {
+		return storageEngine.getTableTypeString( getEngineKeyword());
+	}
+
+	protected String getEngineKeyword() {
+		return "type";
+	}
+
+	@Override
+	public boolean hasSelfReferentialForeignKeyBug() {
+		return storageEngine.hasSelfReferentialForeignKeyBug();
+	}
+
+	@Override
+	public boolean dropConstraints() {
+		return storageEngine.dropConstraints();
+	}
+
+	protected MySQLStorageEngine getDefaultMySQLStorageEngine() {
+		return MyISAMStorageEngine.INSTANCE;
+	}
+
+	@Override
+	protected String escapeLiteral(String literal) {
+		return super.escapeLiteral( literal ).replace("\\", "\\\\");
 	}
 }

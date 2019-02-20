@@ -28,11 +28,9 @@ import org.hibernate.envers.internal.revisioninfo.RevisionInfoQueryCreator;
 import org.hibernate.envers.internal.synchronization.AuditProcessManager;
 import org.hibernate.envers.internal.tools.ReflectionTools;
 import org.hibernate.envers.strategy.AuditStrategy;
-import org.hibernate.envers.strategy.ValidityAuditStrategy;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.internal.util.xml.XMLHelper;
-import org.hibernate.property.access.spi.Getter;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.service.spi.Configurable;
 import org.hibernate.service.spi.Stoppable;
@@ -46,6 +44,7 @@ import org.jboss.logging.Logger;
  * a means to share the old AuditConfiguration.
  *
  * @author Steve Ebersole
+ * @author Chris Cranford
  */
 public class EnversServiceImpl implements EnversService, Configurable, Stoppable {
 	private static final Logger log = Logger.getLogger( EnversServiceImpl.class );
@@ -137,7 +136,8 @@ public class EnversServiceImpl implements EnversService, Configurable, Stoppable
 
 		EnversServiceImpl.this.auditEntitiesConfiguration = new AuditEntitiesConfiguration(
 				properties,
-				revInfoCfgResult.getRevisionInfoEntityName()
+				revInfoCfgResult.getRevisionInfoEntityName(),
+				this
 		);
 		this.auditProcessManager = new AuditProcessManager( revInfoCfgResult.getRevisionInfoGenerator() );
 		this.revisionInfoQueryCreator = revInfoCfgResult.getRevisionInfoQueryCreator();
@@ -180,15 +180,8 @@ public class EnversServiceImpl implements EnversService, Configurable, Stoppable
 			);
 		}
 
-		if ( strategy instanceof ValidityAuditStrategy ) {
-			// further initialization required
-			final Getter revisionTimestampGetter = ReflectionTools.getGetter(
-					revisionInfoClass,
-					revisionInfoTimestampData,
-					serviceRegistry
-			);
-			( (ValidityAuditStrategy) strategy ).setRevisionTimestampGetter( revisionTimestampGetter );
-		}
+		// Strategy-specific initialization
+		strategy.postInitialize( revisionInfoClass, revisionInfoTimestampData, serviceRegistry );
 
 		return strategy;
 	}

@@ -7,9 +7,11 @@
 package org.hibernate.envers.boot.internal;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.Writer;
 import java.util.ArrayList;
@@ -57,7 +59,7 @@ public class AdditionalJaxbMappingProducerImpl implements AdditionalJaxbMappingP
 			return Collections.emptyList();
 		}
 
-		final ArrayList<MappingDocument> additionalMappingDocuments = new ArrayList<MappingDocument>();
+		final ArrayList<MappingDocument> additionalMappingDocuments = new ArrayList<>();
 
 		// atm we do not have distinct origin info for envers
 		final Origin origin = new Origin( SourceType.OTHER, "envers" );
@@ -77,8 +79,8 @@ public class AdditionalJaxbMappingProducerImpl implements AdditionalJaxbMappingP
 
 				// this form at least allows us to get better error messages
 				final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-				final Writer w = new PrintWriter( baos );
 				try {
+					final Writer w = new BufferedWriter( new OutputStreamWriter( baos, "UTF-8" ) );
 					final XMLWriter xw = new XMLWriter( w, new OutputFormat( " ", true ) );
 					xw.write( document );
 					w.flush();
@@ -115,7 +117,7 @@ public class AdditionalJaxbMappingProducerImpl implements AdditionalJaxbMappingP
 			w.flush();
 		}
 		catch (IOException e1) {
-			e1.printStackTrace();
+			throw new RuntimeException( "Error dumping enhanced class", e1 );
 		}
 
 		log.tracef( "Envers-generate entity mapping -----------------------------\n%s", baos.toString() );

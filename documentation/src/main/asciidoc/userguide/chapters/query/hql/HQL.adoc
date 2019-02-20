@@ -6,16 +6,13 @@
 
 The Hibernate Query Language (HQL) and Java Persistence Query Language (JPQL) are both object model focused query languages similar in nature to SQL.
 JPQL is a heavily-inspired-by subset of HQL.
-A JPQL query is always a valid HQL query, the reverse is not true however.
+A JPQL query is always a valid HQL query, the reverse is not true, however.
 
 Both HQL and JPQL are non-type-safe ways to perform query operations.
-Criteria queries offer a type-safe approach to querying.  See <<chapters/query/criteria/Criteria.adoc#criteria,Criteria>> for more information.
-
-[[query-api]]
-=== Query API
+Criteria queries offer a type-safe approach to querying. See <<chapters/query/criteria/Criteria.adoc#criteria,Criteria>> for more information.
 
 [[hql-examples-domain-model]]
-=== Examples domain model
+=== Example domain model
 
 To better understand the further HQL and JPQL examples, it's time to familiarize the domain model entities that are used in all the examples features in this chapter.
 
@@ -44,10 +41,19 @@ include::{modeldir}/WireTransferPayment.java[tags=hql-examples-domain-model-exam
 ----
 ====
 
-[[jpql-api]]
-=== JPA Query API
+[[query-api]]
+=== Query API
 
-In JPA the query is represented by `javax.persistence.Query` or `javax.persistence.TypedQuery` as obtained from the `EntityManager`.
+When using Hibernate, you can execute entity queries either via JPA or the Hibernate-specific API.
+Since 5.2, the Hibernate `Session` interface extends the JPA `EntityManager` interface.
+For this reason, the query API was also merged, and now the Hibernate `org.hibernate.query.Query` interface extends the JPA `javax.persistence.Query`.
+
+Next, we are going to see how the query API differs between the standard JPA interfaces and the Hibernate-specific API.
+
+[[jpql-api]]
+==== JPA Query API
+
+In JPA, the query is represented by `javax.persistence.Query` or `javax.persistence.TypedQuery` as obtained from the `EntityManager`.
 The create an inline `Query` or `TypedQuery`, you need to use the `EntityManager#createQuery` method.
 For named queries, the `EntityManager#createNamedQuery` method is needed.
 
@@ -71,6 +77,21 @@ include::{sourcedir}/HQLTest.java[tags=jpql-api-named-query-example, indent=0]
 ----
 ====
 
+Hibernate offers a specific
+https://docs.jboss.org/hibernate/orm/{majorMinorVersion}/javadocs/org/hibernate/annotations/NamedQuery.html[`@NamedQuery`] annotation
+which provides ways to configure various query features, like flush mode, cacheability, time out interval.
+
+[[jpql-api-hibernate-named-query-example]]
+.Obtaining a Hibernate `Query` or a `TypedQuery` reference for a named query
+====
+[source, JAVA, indent=0]
+----
+include::{modeldir}/Phone.java[tags=jpql-api-hibernate-named-query-example, indent=0]
+
+include::{sourcedir}/HQLTest.java[tags=jpql-api-hibernate-named-query-example, indent=0]
+----
+====
+
 The `Query` interface can then be used to control the execution of the query.
 For example, we may want to specify an execution timeout or control caching.
 
@@ -83,7 +104,7 @@ include::{sourcedir}/HQLTest.java[tags=jpql-api-basic-usage-example]
 ----
 ====
 
-For complete details, see the `Query` http://docs.oracle.com/javaee/7/api/javax/persistence/Query.html[Javadocs].
+For complete details, see the `Query` https://javaee.github.io/javaee-spec/javadocs/javax/persistence/Query.html[Javadocs].
 Many of the settings controlling the execution of the query are defined as hints.
 JPA defines some standard hints (like timeout in the example), but most are provider specific.
 Relying on provider specific hints limits your applications portability to some degree.
@@ -100,22 +121,22 @@ Relying on provider specific hints limits your applications portability to some 
     Attributes that are not specified are treated as `FetchType.LAZY` or `FetchType.EAGER` depending on the attribute's definition in metadata.
     For details, see the EntityGraph discussions in <<chapters/fetching/Fetching.adoc#fetching,Fetching>>.
 `org.hibernate.cacheMode`::
-    Defines the `CacheMode` to use. See `org.hibernate.Query#setCacheMode`.
+    Defines the `CacheMode` to use. See `org.hibernate.query.Query#setCacheMode`.
 `org.hibernate.cacheable`::
-    Defines whether the query is cacheable. true/false. See `org.hibernate.Query#setCacheable`.
+    Defines whether the query is cacheable. true/false. See `org.hibernate.query.Query#setCacheable`.
 `org.hibernate.cacheRegion`::
-    For queries that are cacheable, defines a specific cache region to use. See `org.hibernate.Query#setCacheRegion`.
+    For queries that are cacheable, defines a specific cache region to use. See `org.hibernate.query.Query#setCacheRegion`.
 `org.hibernate.comment`::
-    Defines the comment to apply to the generated SQL. See `org.hibernate.Query#setComment`.
+    Defines the comment to apply to the generated SQL. See `org.hibernate.query.Query#setComment`.
 `org.hibernate.fetchSize`::
-    Defines the JDBC fetch-size to use. See `org.hibernate.Query#setFetchSize`
+    Defines the JDBC fetch-size to use. See `org.hibernate.query.Query#setFetchSize`
 `org.hibernate.flushMode`::
-    Defines the Hibernate-specific `FlushMode` to use. See `org.hibernate.Query#setFlushMode.` If possible, prefer using `javax.persistence.Query#setFlushMode` instead.
-`org.hibernate.readOnly`:: Defines that entities and collections loaded by this query should be marked as read-only. See `org.hibernate.Query#setReadOnly`
+    Defines the Hibernate-specific `FlushMode` to use. See `org.hibernate.query.Query#setFlushMode.` If possible, prefer using `javax.persistence.Query#setFlushMode` instead.
+`org.hibernate.readOnly`:: Defines that entities and collections loaded by this query should be marked as read-only. See `org.hibernate.query.Query#setReadOnly`
 
 The final thing that needs to happen before the query can be executed is to bind the values for any defined parameters.
 JPA defines a simplified set of parameter binding methods.
-Essentially it supports setting the parameter value (by name/position) and a specialized form for `Calendar`/`Date` types additionally accepting a `TemporalType`.
+Essentially, it supports setting the parameter value (by name/position) and a specialized form for `Calendar`/`Date` types additionally accepting a `TemporalType`.
 
 [[jpql-api-parameter-example]]
 .JPA name parameter binding
@@ -141,7 +162,7 @@ include::{sourcedir}/HQLTest.java[tags=jpql-api-positional-parameter-example]
 
 [NOTE]
 ====
-It's good practice not to mix forms in a given query.
+It's good practice not to mix parameter binding forms in a given query.
 ====
 
 In terms of execution, JPA `Query` offers 2 different methods for retrieving a result set.
@@ -149,7 +170,7 @@ In terms of execution, JPA `Query` offers 2 different methods for retrieving a r
 * `Query#getResultList()` - executes the select query and returns back the list of results.
 * `Query#getSingleResult()` - executes the select query and returns a single result. If there were more than one result an exception is thrown.
 
-[[hql-api-list-example]]
+[[jpql-api-list-example]]
 .JPA `getResultList()` result
 ====
 [source, JAVA, indent=0]
@@ -158,7 +179,7 @@ include::{sourcedir}/HQLTest.java[tags=jpql-api-list-example]
 ----
 ====
 
-[[hql-api-unique-result-example]]
+[[jpql-api-unique-result-example]]
 .JPA `getSingleResult()`
 ====
 [source, JAVA, indent=0]
@@ -168,9 +189,9 @@ include::{sourcedir}/HQLTest.java[tags=jpql-api-single-result-example]
 ====
 
 [[hql-api]]
-=== Hibernate Query API
+==== Hibernate Query API
 
-In Hibernate, the HQL query is represented as `org.hibernate.Query` which is obtained from a `Session`.
+In Hibernate, the HQL query is represented as `org.hibernate.query.Query` which is obtained from a `Session`.
 If the HQL is a named query, `Session#getNamedQuery` would be used; otherwise `Session#createQuery` is needed.
 
 [[hql-api-example]]
@@ -215,6 +236,7 @@ For complete details, see the https://docs.jboss.org/hibernate/orm/{majorMinorVe
 ====
 Query hints here are database query hints.
 They are added directly to the generated SQL according to `Dialect#getQueryHintString`.
+
 The JPA notion of query hints, on the other hand, refer to hints that target the provider (Hibernate).
 So even though they are called the same, be aware they have a very different purpose.
 Also, be aware that Hibernate query hints generally make the application non-portable across databases unless the code adding them first checks the Dialect.
@@ -263,22 +285,16 @@ include::{sourcedir}/HQLTest.java[tags=hql-api-parameter-short-form-example]
 ----
 ====
 
-HQL-style positional parameters follow JDBC positional parameter syntax.
-They are declared using `?` without a following ordinal.
-There is no way to relate two such positional parameters as being "the same" aside from binding the same value to each.
-
-[[hql-api-positional-parameter-example]]
-.Hibernate positional parameter binding
+[IMPORTANT]
 ====
+Traditionally, Hibernate used to support a JDBC positional parameter syntax form via a `?` symbol without a following ordinal.
+
+There was no way to relate two such positional parameters as being "the same" aside from binding the same value to each and, for this reason, this form is no longer supported.
+
 [source, JAVA, indent=0]
 ----
 include::{sourcedir}/HQLTest.java[tags=hql-api-positional-parameter-example]
 ----
-====
-
-[IMPORTANT]
-====
-This form should be considered deprecated and may be removed in the near future.
 ====
 
 In terms of execution, Hibernate offers 4 different methods. The 2 most commonly used are
@@ -295,6 +311,8 @@ include::{sourcedir}/HQLTest.java[tags=hql-api-list-example]
 ----
 ====
 
+It is also possible to extract a single result from a `Query`.
+
 [[hql-api-unique-result-example]]
 .Hibernate `uniqueResult()`
 ====
@@ -310,23 +328,47 @@ If the unique result is used often and the attributes upon which it is based are
 See the <<chapters/domain/natural_id.adoc#naturalid,Natural Ids>> for more information on this topic.
 ====
 
-Hibernate offers 2 additional, specialized methods for performing the query and handling results.
-`Query#scroll` works in tandem with the JDBC notion of a scrollable `ResultSet`.
-The `scroll` method is overloaded.
+[[hql-api-scroll]]
+==== Query scrolling
 
-* Then main form accepts a single argument of type `org.hibernate.ScrollMode` which indicates the type of scrolling to be used.
+Hibernate offers additional, specialized methods for scrolling the query and handling results using a server-side cursor.
+
+`Query#scroll` works in tandem with the JDBC notion of a scrollable `ResultSet`.
+
+The `Query#scroll` method is overloaded:
+
+* The main form accepts a single argument of type `org.hibernate.ScrollMode` which indicates the type of scrolling to be used.
 See the https://docs.jboss.org/hibernate/orm/{majorMinorVersion}/javadocs/org/hibernate/ScrollMode.html[Javadocs] for the details on each.
 * The second form takes no argument and will use the `ScrollMode` indicated by `Dialect#defaultScrollMode`.
+
 `Query#scroll` returns a `org.hibernate.ScrollableResults` which wraps the underlying JDBC (scrollable) `ResultSet` and provides access to the results.
-Since this form holds the JDBC `ResultSet` open, the application should indicate when it is done with the `ScrollableResults` by calling its `close()` method (as inherited from `java.io.Closeable` so that `ScrollableResults` will work with try-with-resources blocks!).
-If left unclosed by the application, Hibernate will automatically close the `ScrollableResults` when the current transaction completes.
+Unlike a typical forward-only `ResultSet`, the `ScrollableResults` allows you to navigate the `ResultSet` in any direction.
+
+[[hql-api-scroll-example]]
+.Scrolling through a `ResultSet` containing entities
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/HQLTest.java[tags=hql-api-scroll-example]
+----
+====
+
+[IMPORTANT]
+====
+Since this form holds the JDBC `ResultSet` open, the application should indicate when it is done with the `ScrollableResults` by calling its `close()` method (as inherited from `java.io.Closeable`
+so that `ScrollableResults` will work with https://docs.oracle.com/javase/tutorial/essential/exceptions/tryResourceClose.html[try-with-resources] blocks).
+
+If left unclosed by the application, Hibernate will automatically close the underlying resources (e.g. `ResultSet` and `PreparedStatement`) used internally by the `ScrollableResults` when the current transaction is ended (either commit or rollback).
+
+However, it is good practice to close the `ScrollableResults` explicitly.
+====
 
 [NOTE]
 ====
 If you plan to use `Query#scroll` with collection fetches it is important that your query explicitly order the results so that the JDBC results contain the related rows sequentially.
 ====
 
-The last is `Query#iterate`, which is intended for loading entities which the application feels certain will be in the second-level cache.
+Hibernate also supports `Query#iterate`, which is intended for loading entities when it is known that the loaded entries are already stored in the second-level cache.
 The idea behind iterate is that just the matching identifiers will be obtained in the SQL query.
 From these the identifiers are resolved by second-level cache lookup.
 If these second-level cache lookups fail, additional queries will need to be issued against the database.
@@ -341,6 +383,37 @@ The `Iterator` returned from `Query#iterate` is actually a specially typed Itera
 It is specialized to expose a `close()` method (again, inherited from `java.io.Closeable`).
 When you are done with this `Iterator` you should close it, either by casting to `HibernateIterator` or `Closeable`, or by calling https://docs.jboss.org/hibernate/orm/{majorMinorVersion}/javadocs/org/hibernate/Hibernate.html#close-java.util.Iterator-[`Hibernate#close(java.util.Iterator)`].
 
+Since 5.2, Hibernate offers support for returning a `Stream` which can be later used to transform the underlying `ResultSet`.
+
+Internally, the `stream()` behaves like a `Query#scroll` and the underlying result is backed by a `ScrollableResults`.
+
+Fetching a projection using the `Query#stream` method can be done as follows:
+
+[[hql-api-stream-projection-example]]
+.Hibernate `stream()` using a projection result type
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/HQLTest.java[tags=hql-api-stream-projection-example]
+----
+====
+
+When fetching a single result, like a `Person` entity, instead of a `Stream<Object[]>`, Hibernate is going to figure out the actual type, so the result is a `Stream<Person>`.
+
+[[hql-api-stream-example]]
+.Hibernate `stream()` using an entity result type
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/HQLTest.java[tags=hql-api-stream-example]
+----
+====
+
+[IMPORTANT]
+====
+Just like with `ScrollableResults`, you should always close a Hibernate `Stream` either explicitly or using a https://docs.oracle.com/javase/tutorial/essential/exceptions/tryResourceClose.html[try-with-resources] block.
+====
+
 [[hql-case-sensitivity]]
 === Case Sensitivity
 
@@ -349,7 +422,7 @@ So `SeLeCT` is the same as `sELEct` is the same as `SELECT`, but `org.hibernate.
 
 [NOTE]
 ====
-This documentation uses lowercase keywords as convention in examples.
+This documentation uses lowercase keywords as a convention in query examples.
 ====
 
 [[hql-statement-types]]
@@ -360,14 +433,14 @@ HQL additionally allows `INSERT` statements, in a form similar to a SQL `INSERT 
 
 [IMPORTANT]
 ====
-Care should be taken as to when a `UPDATE` or `DELETE` statement is executed.
+Care should be taken as to when an `UPDATE` or `DELETE` statement is executed.
 
 [quote, Section 4.10 of the JPA 2.0 Specification]
 ____
 Caution should be used when executing bulk update or delete operations because they may result in
 inconsistencies between the database and the entities in the active persistence context. In general, bulk
-update and delete operations should only be performed within a transaction in a new persistence con
-text or before fetching or accessing entities whose state might be affected by such operations.
+update and delete operations should only be performed within a transaction in a new persistence context
+or before fetching or accessing entities whose state might be affected by such operations.
 ____
 ====
 
@@ -404,11 +477,11 @@ include::{sourcedir}/HQLTest.java[tags=hql-select-simplest-jpql-example]
 ----
 
 Even though HQL does not require the presence of a `select_clause`, it is generally good practice to include one.
-For simple queries the intent is clear and so the intended result of the `select_clause` is east to infer.
+For simple queries the intent is clear and so the intended result of the `select_clause` is easy to infer.
 But on more complex queries that is not always the case.
 
 It is usually better to explicitly specify intent.
-Hibernate does not actually enforce that a `select_clause` be present even when parsing JPQL queries, however applications interested in JPA portability should take heed of this.
+Hibernate does not actually enforce that a `select_clause` be present even when parsing JPQL queries, however, applications interested in JPA portability should take heed of this.
 ====
 
 [[hql-update]]
@@ -424,23 +497,23 @@ include::{extrasdir}/statement_update_bnf.txt[]
 ----
 ====
 
-`UPDATE` statements, by default, do not effect the `version` or the `timestamp` attribute values for the affected entities.
+`UPDATE` statements, by default, do not affect the `version` or the `timestamp` attribute values for the affected entities.
 
 However, you can force Hibernate to set the `version` or `timestamp` attribute values through the use of a `versioned update`.
 This is achieved by adding the `VERSIONED` keyword after the `UPDATE` keyword.
 
 [NOTE]
 ====
-This is a Hibernate specific feature and will not work in a portable manner.
+Versioned updates is a Hibernate-specific feature and will not work in a portable manner.
 
-Custom version types, `org.hibernate.usertype.UserVersionType`, are not allowed in conjunction with a `update versioned` statement.
+Custom version types, `org.hibernate.usertype.UserVersionType`, are not allowed in conjunction with an `update versioned` statement.
 ====
 
-An `UPDATE` statement is executed using the `executeUpdate()` of either `org.hibernate.Query` or `javax.persistence.Query`.
+An `UPDATE` statement is executed using the `executeUpdate()` of either `org.hibernate.query.Query` or `javax.persistence.Query`.
 The method is named for those familiar with the JDBC `executeUpdate()` on `java.sql.PreparedStatement`.
 
-The `int` value returned by the `executeUpdate()` method indicates the number of entities effected by the operation.
-This may or may not correlate to the number of rows effected in the database.
+The `int` value returned by the `executeUpdate()` method indicates the number of entities affected by the operation.
+This may or may not correlate to the number of rows affected in the database.
 An HQL bulk operation might result in multiple actual SQL statements being executed (for joined-subclass, for example).
 The returned number indicates the number of actual entities affected by the statement.
 Using a JOINED inheritance hierarchy, a delete against one of the subclasses may actually result in deletes against not just the table to which that subclass is mapped, but also the "root" table and tables "in between".
@@ -476,7 +549,7 @@ include::{extrasdir}/statement_delete_bnf.txt[]
 ----
 ====
 
-A `DELETE` statement is also executed using the `executeUpdate()` method of either `org.hibernate.Query` or `javax.persistence.Query`.
+A `DELETE` statement is also executed using the `executeUpdate()` method of either `org.hibernate.query.Query` or `javax.persistence.Query`.
 
 [[hql-insert]]
 === Insert statements
@@ -485,7 +558,7 @@ HQL adds the ability to define `INSERT` statements as well.
 
 [NOTE]
 ====
-There is no JPQL equivalent to this.
+There is no JPQL equivalent to HQL-style INSERT statements.
 ====
 
 The BNF for an HQL `INSERT` statement is:
@@ -514,7 +587,7 @@ You can either explicitly specify the id property in the `attribute_list`, in wh
 This latter option is only available when using id generators that operate "in the database"; attempting to use this option with any "in memory" type generators will cause an exception during parsing.
 
 For optimistic locking attributes, the insert statement again gives you two options.
-You can either specify the attribute in the `attribute_list` in which case its value is taken from the corresponding select expressions, or omit it from the `attribute_list` in which case the `seed value` defined by the corresponding `org.hibernate.type.VersionType` is used.
+You can either specify the attribute in the `attribute_list` in which case its value is taken from the corresponding select expressions or omit it from the `attribute_list` in which case the `seed value` defined by the corresponding `org.hibernate.type.VersionType` is used.
 
 [[hql-insert-example]]
 .INSERT query statements
@@ -528,8 +601,8 @@ include::{sourcedir}/../batch/BatchTest.java[tags=batch-bulk-hql-insert-example]
 [[hql-from-clause]]
 === The `FROM` clause
 
-The `FROM` clause is responsible defining the scope of object model types available to the rest of the query.
-It also is responsible for defining all the "identification variables" available to the rest of the query.
+The `FROM` clause is responsible for defining the scope of object model types available to the rest of the query.
+It is also responsible for defining all the "identification variables" available to the rest of the query.
 
 [[hql-identification-variables]]
 === Identification variables
@@ -630,7 +703,7 @@ HQL also defines a `WITH` clause to qualify the join conditions.
 
 [NOTE]
 ====
-This is specific to HQL. JPQL defines the `ON` clause for this feature.
+The HQL-style WITH keyword is specific to Hibernate. JPQL defines the `ON` clause for this feature.
 ====
 
 [[hql-explicit-join-with-example]]
@@ -743,6 +816,89 @@ For further information about collection-valued association references, see <<hq
 In the case of component/embedded attributes, the join is simply logical and does not correlate to a physical (SQL) join.
 Unlike explicit joins, however, implicit joins may also reference basic state fields as long as the path expression ends there.
 
+[[hql-distinct]]
+=== Distinct
+
+For JPQL and HQL, `DISTINCT` has two meanings:
+
+. It can be passed to the database so that duplicates are removed from a result set
+. It can be used to filter out the same parent entity references when join fetching a child collection
+
+[[hql-distinct-projection-query]]
+==== Using DISTINCT with SQL projections
+
+For SQL projections, `DISTINCT` needs to be passed to the database because the duplicated entries need to be filtered out before being returned to the database client.
+
+[[hql-distinct-projection-query-example]]
+.Using DISTINCT with projection queries example
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/SelectDistinctTest.java[tags=hql-distinct-projection-query-example]
+----
+====
+
+When running the query above, Hibernate generates the following SQL query:
+
+====
+[source, SQL, indent=0]
+----
+include::{extrasdir}/hql-distinct-projection-query-example.sql[]
+----
+====
+
+For this particular use case, passing the `DISTINCT` keyword from JPQL/HQL to the database is the right thing to do.
+
+[[hql-distinct-entity-query]]
+==== Using DISTINCT with entity queries
+
+`DISTINCT` can also be used to filter out entity object references when fetching a child association along with the parent entities.
+
+[[hql-distinct-entity-query-example]]
+.Using DISTINCT with entity queries example
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/SelectDistinctTest.java[tags=hql-distinct-entity-query-example]
+----
+====
+
+In this case, `DISTINCT` is used because there can be multiple `Books` entities associated with a given `Person`.
+If in the database there are 3 `Persons` in the database and each person has 2 `Books`, without `DISTINCT` this query will return 6 `Persons` since
+the SQL-level result-set size is given by the number of joined `Book` records.
+
+However, the `DISTINCT` keyword is passed to the database as well:
+
+====
+[source, SQL, indent=0]
+----
+include::{extrasdir}/hql-distinct-entity-query-example.sql[]
+----
+====
+
+In this case, the `DISTINCT` SQL keyword is undesirable since it does a redundant result set sorting, as explained http://in.relation.to/2016/08/04/introducing-distinct-pass-through-query-hint/[in this blog post].
+To fix this issue, Hibernate 5.2.2 added support for the `HINT_PASS_DISTINCT_THROUGH` entity query hint:
+
+[[hql-distinct-entity-query-hint-example]]
+.Using DISTINCT with entity queries example
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/SelectDistinctTest.java[tags=hql-distinct-entity-query-hint-example]
+----
+====
+
+With this entity query hint, Hibernate will not pass the `DISTINCT` keyword to the SQL query:
+
+====
+[source, SQL, indent=0]
+----
+include::{extrasdir}/hql-distinct-entity-query-hint-example.sql[]
+----
+====
+
+When using the `HINT_PASS_DISTINCT_THROUGH` entity query hint, Hibernate can still remove the duplicated parent-side entities from the query result.
+
 [[hql-collection-valued-associations]]
 === Collection member references
 
@@ -795,7 +951,7 @@ ENTRY::
   Only valid for `Maps`. Refers to the map's logical `java.util.Map.Entry` tuple (the combination of its key and value).
   `ENTRY` is only valid as a terminal path and it's applicable to the `SELECT` clause only.
 
-See <<hql-collection-expressions>> for additional details on collection related expressions.
+See <<hql-collection-expressions>> for additional details on collection-related expressions.
 
 [[hql-polymorphism]]
 === Polymorphism
@@ -812,20 +968,26 @@ include::{sourcedir}/HQLTest.java[tags=hql-polymorphism-example, indent=0]
 
 This query names the `Payment` entity explicitly.
 However, all subclasses of `Payment` are also available to the query.
-So if the `CreditCardPayment` and `WireTransferPayment` entities extend the `Payment` class, all three types would be available to the entity query,
+So, if the `CreditCardPayment` and `WireTransferPayment` entities extend the `Payment` class, all three types would be available to the entity query,
 and the query would return instances of all three.
+
+
+This behavior can be altered in two ways:
+
+- by limiting the query to select only from the subclass entity
+- by using either the `org.hibernate.annotations.Polymorphism` annotation (global, and Hibernate-specific). See the <<chapters/domain/inheritance.adoc#entity-inheritance-polymorphism, `@Polymorphism` section for more info about this use case>>.
 
 [NOTE]
 ====
-This can be altered by using either the `org.hibernate.annotations.Polymorphism` annotation (global, and Hibernate-specific) or limiting them using in the query itself using an entity type expression.
+The HQL query `from java.lang.Object` is totally valid (although not very practical from a performance perspective)!
 
-The HQL query `from java.lang.Object` is totally valid! It returns every object of every type defined in your application.
+It returns every object of every entity type defined by your application mappings.
 ====
 
 [[hql-expressions]]
 === Expressions
 
-Essentially expressions are references that resolve to basic or tuple values.
+Essentially, expressions are references that resolve to basic or tuple values.
 
 [[hql-identification-variable]]
 === Identification variable
@@ -874,7 +1036,7 @@ The actual suffix is case-insensitive.
 The boolean literals are `TRUE` and `FALSE`, again case-insensitive.
 
 Enums can even be referenced as literals. The fully-qualified enum class name must be used.
-HQL can also handle constants in the same manner, though JPQL does not define that as supported.
+HQL can also handle constants in the same manner, though JPQL does not define that as being supported.
 
 Entity names can also be used as literal. See <<hql-entity-type-exp>>.
 
@@ -884,7 +1046,7 @@ Date/time literals can be specified using the JDBC escape syntax:
 * `{t 'hh:mm:ss'}` for times
 * `{ts 'yyyy-mm-dd hh:mm:ss[.millis]'}` (millis optional) for timestamps.
 
-These Date/time literals only work if you JDBC drivers supports them.
+These Date/time literals only work if the underlying JDBC driver supports them.
 ====
 
 [[hql-numeric-arithmetic]]
@@ -911,13 +1073,13 @@ The following rules apply to the result of arithmetic operations:
 * else, (the assumption being that both operands are of integral type) the result is `Integer` (except for division, in which case the result type is not further defined)
 
 Date arithmetic is also supported, albeit in a more limited fashion.
-This is due partially to differences in database support and partially to the lack of support for `INTERVAL` definition in the query language itself.
+This is due  to differences in database support and partly to the lack of support for `INTERVAL` definition in the query language itself.
 
 [[hql-concatenation]]
 === Concatenation (operation)
 
 HQL defines a concatenation operator in addition to supporting the concatenation (`CONCAT`) function.
-This is not defined by JPQL, so portable applications should avoid it use.
+This is not defined by JPQL, so portable applications should avoid its use.
 The concatenation operator is taken from the SQL concatenation operator (e.g `||`).
 
 [[hql-concatenation-example]]
@@ -962,7 +1124,7 @@ include::{sourcedir}/HQLTest.java[tags=hql-aggregate-functions-example]
 ----
 ====
 
-Aggregations often appear with grouping. For information on grouping see <<hql-grouping>>.
+Aggregations often appear with grouping. For information on grouping see <<hql-group-by>>.
 
 [[hql-exp-functions]]
 === Scalar functions
@@ -988,7 +1150,8 @@ include::{sourcedir}/HQLTest.java[tags=hql-concat-function-example]
 
 SUBSTRING::
 	  Extracts a portion of a string value.
-	  The second argument denotes the starting position. The third (optional) argument denotes the length.
+	  The second argument denotes the starting position, where 1 is the first character of the string.
+	  The third (optional) argument denotes the length.
 
 ====
 [source, JAVA, indent=0]
@@ -1126,7 +1289,7 @@ include::{sourcedir}/HQLTest.java[tags=hql-bit-length-function-example]
 CAST::
 	Performs a SQL cast.
 	The cast target should name the Hibernate mapping type to use.
-	See the <<chapters/domain/basic_types.adoc#[basic-provided,data types>> chapter on for more information.
+	See the <<chapters/domain/basic_types.adoc#basic-provided,data types>> chapter on for more information.
 
 ====
 [source, JAVA, indent=0]
@@ -1178,8 +1341,8 @@ include::{sourcedir}/HQLTest.java[tags=hql-str-function-example]
 ----
 ====
 
-[[hql-non-standard-functions]]
-=== Non-standardized functions
+[[hql-user-defined-functions]]
+=== User-defined functions
 
 Hibernate Dialects can register additional functions known to be available for that particular database product.
 These functions are also available in HQL (and JPQL, though only when using Hibernate as the JPA provider obviously).
@@ -1187,8 +1350,84 @@ However, they would only be available when using that database Dialect.
 Applications that aim for database portability should avoid using functions in this category.
 
 Application developers can also supply their own set of functions.
-This would usually represent either custom SQL functions or aliases for snippets of SQL.
-Such function declarations are made by using the `addSqlFunction()` method of `org.hibernate.cfg.Configuration`.
+This would usually represent either user-defined SQL functions or aliases for snippets of SQL.
+Such function declarations are made by using the `addSqlFunction()` method of
+the `org.hibernate.boot.MetadataBuilder` or the legacy `org.hibernate.cfg.Configuration`.
+
+Now, let's assume we have the following `apply_vat` PostgreSQL user-defined function:
+
+[[hql-user-defined-function-postgresql-example]]
+.PostgreSQL user-defined function
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/PostgreSQLFunctionWhereClauseTest.java[tags=hql-user-defined-function-postgresql-example]
+----
+====
+
+Let's consider we have persisted the following entity in our database:
+
+[[hql-user-defined-function-postgresql-entity-example]]
+.Book entity
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/PostgreSQLFunctionWhereClauseTest.java[tags=hql-user-defined-function-postgresql-entity-example]
+----
+====
+
+[[hql-user-defined-functions-where-clause]]
+==== User-defined functions referenced in the WHERE clause
+
+By default, Hibernate can pass through any user-defined function that's being used in the WHERE clause
+of a JPQL/HQL entity query.
+
+[[hql-user-defined-function-postgresql-where-clause-example]]
+.User-defined function passing through the WHERE clause
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/PostgreSQLFunctionWhereClauseTest.java[tags=hql-user-defined-function-postgresql-where-clause-example]
+----
+====
+
+While this works just fine with Hibernate, it might be a problem with other JPA providers.
+For this purpose, JPA offers the `function` JPQL keyword which works as follows.
+
+[[hql-user-defined-function-postgresql-jpql-example]]
+.Using the JPQL `function` keyword
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/PostgreSQLFunctionWhereClauseTest.java[tags=hql-user-defined-function-postgresql-jpql-example]
+----
+====
+
+[[hql-user-defined-functions-select-clause]]
+==== User-defined functions referenced in the SELECT clause
+
+When the user-defined function is referenced in the SELECT clause of a JPQL/HQL entity query,
+Hibernate can no longer pass it through unless the function is registered.
+
+[[hql-user-defined-functions-register-metadata-builder-example]]
+.Registering a user-defined function using the `MetadataBuilderContributor`
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/PostgreSQLFunctionSelectClauseTest.java[tags=hql-user-defined-functions-register-metadata-builder-example]
+----
+====
+
+Now that that `apply_vat` is registered, we can reference it in the JPQL SELECT clause.
+
+[[hql-user-defined-function-postgresql-select-clause-example]]
+.User-defined function in the SELECT clause
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/PostgreSQLFunctionSelectClauseTest.java[tags=hql-user-defined-function-postgresql-select-clause-example]
+----
+====
 
 [[hql-collection-expressions]]
 === Collection-related expressions
@@ -1215,7 +1454,7 @@ ELEMENTS::
   Only allowed in the where clause.
   Often used in conjunction with `ALL`, `ANY` or `SOME` restrictions.
 INDICES::
-  Similar to `elements` except that `indices` refers to the collections indices (keys/positions) as a whole.
+  Similar to `elements` except that the `indices` expression refers to the collections indices (keys/positions) as a whole.
 
 [[hql-collection-expressions-example]]
 .Collection-related expressions examples
@@ -1244,7 +1483,7 @@ See also <<hql-collection-qualification>> as there is a good deal of overlap.
 
 We can also refer to the type of an entity as an expression.
 This is mainly useful when dealing with entity inheritance hierarchies.
-The type can expressed using a `TYPE` function used to refer to the type of an identification variable representing an entity.
+The type can be expressed using a `TYPE` function used to refer to the type of an identification variable representing an entity.
 The name of the entity also serves as a way to refer to an entity type.
 Additionally, the entity type can be parameterized, in which case the entity's Java Class reference would be bound as the parameter value.
 
@@ -1259,9 +1498,9 @@ include::{sourcedir}/HQLTest.java[tags=hql-entity-type-exp-example]
 
 [NOTE]
 ====
-HQL also has a legacy form of referring to an entity type, though that legacy form is considered deprecated in favor of `TYPE`.
-The legacy form would have used `p.class` in the examples rather than `type(p)`.
-It is mentioned only for completeness.
+HQL also has a legacy form of referring to an entity type using the `class` keyword, though that legacy form is considered deprecated in favor of `TYPE`.
+
+The legacy form would have used `p.class` in the examples rather than `type(p)`. It is mentioned only for completeness.
 ====
 
 [[hql-case-expressions]]
@@ -1308,6 +1547,27 @@ include::{sourcedir}/HQLTest.java[tags=hql-searched-case-expressions-example]
 ----
 ====
 
+[[hql-case-arithmetic-expressions]]
+=== CASE expressions with arithmetic operations
+
+If you want to use arithmetic operations in the CASE expressions, you need to wrap the arithmetic operation in parentheses
+as illustrated by the following example:
+
+[[hql-case-arithmetic-expressions-example]]
+.Case expression with arithmetic operation example
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/HQLTest.java[tags=hql-case-arithmetic-expressions-example]
+----
+====
+
+[IMPORTANT]
+====
+Without wrapping the arithmetic expression in `(` and `)`, the entity query parser will not be able to
+parse the arithmetic operators.
+====
+
 [[hql-nullif]]
 === NULLIF expressions
 
@@ -1338,7 +1598,7 @@ There is a particular expression type that is only valid in the select clause.
 Hibernate calls this "dynamic instantiation".
 JPQL supports some of that feature and calls it a "constructor expression".
 
-So rather than dealing with the `Object[]` (again, see <<hql-api>>) here we are wrapping the values in a type-safe java object that will be returned as the results of the query.
+So rather than dealing with the `Object[]` (again, see <<hql-api>>) here, we are wrapping the values in a type-safe Java object that will be returned as the results of the query.
 
 [[hql-select-clause-dynamic-instantiation-example]]
 .Dynamic HQL and JPQL instantiation example
@@ -1353,12 +1613,13 @@ include::{sourcedir}/HQLTest.java[tags=hql-select-clause-dynamic-instantiation-e
 
 [NOTE]
 ====
-The class reference must be fully qualified and it must have a matching constructor.
+The projection class must be fully qualified in the entity query, and it must define a matching constructor.
 ====
 
 [IMPORTANT]
 ====
-The class here need not be mapped.
+The class here need not be mapped. It can be a DTO class.
+
 If it does represent an entity, the resulting instances are returned in the NEW state (not managed!).
 ====
 
@@ -1395,7 +1656,7 @@ If the user doesn't assign aliases, the key will be the index of each particular
 === Predicates
 
 Predicates form the basis of the where clause, the having clause and searched case expressions.
-They are expressions which resolve to a truth value, generally `TRUE` or `FALSE`, although boolean comparisons involving `NULL` generally resolve to `UNKNOWN`.
+They are expressions which resolve to a truth value, generally `TRUE` or `FALSE`, although boolean comparisons involving `NULL` resolve typically to `UNKNOWN`.
 
 [[hql-relational-comparisons]]
 === Relational comparisons
@@ -1433,8 +1694,8 @@ It resolves to false if the subquery result is empty.
 [[hql-null-predicate]]
 === Nullness predicate
 
-Check a value for nullness.
-Can be applied to basic attribute references, entity references and parameters.
+It check a value for nullness.
+It can be applied to basic attribute references, entity references, and parameters.
 HQL additionally allows it to be applied to component/embeddable types.
 
 [[hql-null-predicate-example]]
@@ -1515,9 +1776,9 @@ include::{extrasdir}/predicate_in_bnf.txt[]
 
 The types of the `single_valued_expression` and the individual values in the `single_valued_list` must be consistent.
 
-JPQL limits the valid types here to string, numeric, date, time, timestamp, and enum types, and , in JPQL, `single_valued_expression` can only refer to:
+JPQL limits the valid types here to string, numeric, date, time, timestamp, and enum types, and, in JPQL, `single_valued_expression` can only refer to:
 
-* "state fields", which is its term for simple attributes. Specifically this excludes association and component/embedded attributes.
+* "state fields", which is its term for simple attributes. Specifically, this excludes association and component/embedded attributes.
 * entity type expressions. See <<hql-entity-type-exp>>
 
 In HQL, `single_valued_expression` can refer to a far more broad set of expression types.
@@ -1581,7 +1842,7 @@ If that following predicate is true, the NOT resolves to false.
 
 [NOTE]
 ====
-If the predicate is true, NOT resolves to false. If the predicate is unknown (e.g. `NULL`), the NOT resolves to unknown as well.
+If the predicate is true, NOT resolves to false. If the predicate is unknown (e.g. `NULL`), then NOT resolves to unknown as well.
 ====
 
 [[hql-and-predicate]]
@@ -1589,7 +1850,7 @@ If the predicate is true, NOT resolves to false. If the predicate is unknown (e.
 
 The `AND` operator is used to combine 2 predicate expressions.
 The result of the AND expression is true if and only if both predicates resolve to true.
-If either predicates resolves to unknown, the AND expression resolves to unknown as well. Otherwise, the result is false.
+If either predicate resolves to unknown, the AND expression resolves to unknown as well. Otherwise, the result is false.
 
 [[hql-or-predicate]]
 === OR predicate operator
@@ -1654,7 +1915,7 @@ The types of expressions considered valid as part of the `ORDER BY` clause inclu
 Additionally, JPQL says that all values referenced in the `ORDER BY` clause must be named in the `SELECT` clause.
 HQL does not mandate that restriction, but applications desiring database portability should be aware that not all databases support referencing values in the `ORDER BY` clause that are not referenced in the select clause.
 
-Individual expressions in the order-by can be qualified with either `ASC` (ascending) or `DESC` (descending) to indicated the desired ordering direction.
+Individual expressions in the order-by can be qualified with either `ASC` (ascending) or `DESC` (descending) to indicate the desired ordering direction.
 Null values can be placed in front or at the end of the sorted set using `NULLS FIRST` or `NULLS LAST` clause respectively.
 
 [[hql-order-by-example]]
@@ -1665,3 +1926,67 @@ Null values can be placed in front or at the end of the sorted set using `NULLS 
 include::{sourcedir}/HQLTest.java[tags=hql-order-by-example]
 ----
 ====
+
+[[hql-read-only-entities]]
+=== Read-only entities
+
+As explained in <<chapters/domain/immutability.adoc#entity-immutability,entity immutability>> section, fetching entities in read-only mode is much more efficient than fetching read-write entities.
+Even if the entities are mutable, you can still fetch them in read-only mode, and benefit from reducing the memory footprint and speeding up the flushing process.
+
+Read-only entities are skipped by the dirty checking mechanism as illustrated by the following example:
+
+[[hql-read-only-entities-example]]
+.Read-only entities query example
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/HQLTest.java[tags=hql-read-only-entities-example]
+----
+
+[source, SQL, indent=0]
+----
+include::{extrasdir}/hql-read-only-entities-example.sql[]
+----
+====
+
+As you can see, there is no SQL `UPDATE` being executed.
+
+You can also pass the read-only hint to named queries using the JPA https://javaee.github.io/javaee-spec/javadocs/javax/persistence/QueryHint.html[`@QueryHint`] annotation.
+
+[[jpa-read-only-entities-native-example]]
+.Fetching read-only entities using a named query and the read-only hint
+====
+[source, JAVA, indent=0]
+----
+include::{modeldir}/Person.java[tags=jpa-read-only-entities-native-example]
+----
+====
+
+The Hibernate native API offers a `Query#setReadOnly` method, as an alternative to using a JPA query hint:
+
+[[hql-read-only-entities-native-example]]
+.Read-only entities native query example
+====
+[source, JAVA, indent=0]
+----
+include::{sourcedir}/HQLTest.java[tags=hql-read-only-entities-native-example]
+----
+====
+
+[[hql-query-plan-cache]]
+=== Entity query plan cache
+
+Any entity query, be it JPQL or Criteria API, has to be parsed into an AST (Abstract Syntax Tree) so that Hibernate can generate the proper SQL statement. The entity query compilation takes time, and for this reason, Hibernate offers a query plan cache.
+
+When executing an entity query, Hibernate first checks the plan cache, and only if there's no plan available, a new one will be computed right away.
+
+The query plan cache can be configured via the following configuration properties:
+
+`hibernate.query.plan_cache_max_size`::
+This setting gives the maximum number of entries of the plan cache. The default value is 2048.
+`hibernate.query.plan_parameter_metadata_max_size`::
+The setting gives the maximum number of `ParameterMetadataImpl` instances maintained by the query plan cache. The `ParameterMetadataImpl` object encapsulates metadata about parameters encountered within a query. The default is 128.
+
+Now, if you have many JPQL or Criteria API queries, it's a good idea to increase the query plan cache size so that the vast majority of executing entity queries can skip the compilation phase, therefore reducing execution time.
+
+To get a better understanding of the query plan cache effectiveness, Hibernate offers several statistics you can use. For more details, check out the <<chapters/statistics/Statistics.adoc#statistics-query-plan-cache,Query plan cache statistics>> section.

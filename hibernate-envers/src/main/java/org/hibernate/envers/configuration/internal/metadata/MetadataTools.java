@@ -333,6 +333,19 @@ public final class MetadataTools {
 
 				if ( changeToKey ) {
 					property.setName( "key-" + property.getName() );
+
+					// HHH-11463 when cloning a many-to-one to be a key-many-to-one, the FK attribute
+					// should be explicitly set to 'none' or added to be 'none' to avoid issues with
+					// making references to the main schema.
+					if ( property.getName().equals( "key-many-to-one" ) ) {
+						final Attribute foreignKey = property.attribute( "foreign-key" );
+						if ( foreignKey == null ) {
+							property.addAttribute( "foreign-key", "none" );
+						}
+						else {
+							foreignKey.setValue( "none" );
+						}
+					}
 				}
 
 				if ( "property".equals( property.getName() ) ) {
@@ -375,7 +388,7 @@ public final class MetadataTools {
 	/**
 	 * An iterator over column names.
 	 */
-	public static abstract class ColumnNameIterator implements Iterator<String> {
+	public abstract static class ColumnNameIterator implements Iterator<String> {
 	}
 
 	public static ColumnNameIterator getColumnNameIterator(final Iterator<Selectable> selectableIterator) {
@@ -389,7 +402,7 @@ public final class MetadataTools {
 				if ( next.isFormula() ) {
 					throw new FormulaNotSupportedException();
 				}
-				return ((Column) next).getName();
+				return ( (Column) next ).getName();
 			}
 
 			public void remove() {

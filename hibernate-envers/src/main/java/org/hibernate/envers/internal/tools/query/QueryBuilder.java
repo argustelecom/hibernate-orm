@@ -8,16 +8,33 @@ package org.hibernate.envers.internal.tools.query;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
-import org.hibernate.Query;
+import javax.persistence.criteria.JoinType;
+
+import org.hibernate.HibernateException;
 import org.hibernate.Session;
+import org.hibernate.SharedSessionContract;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.envers.RevisionType;
 import org.hibernate.envers.internal.entities.RevisionTypeType;
 import org.hibernate.envers.internal.tools.MutableInteger;
 import org.hibernate.envers.internal.tools.StringTools;
 import org.hibernate.envers.internal.tools.Triple;
+import org.hibernate.envers.tools.Pair;
+import org.hibernate.query.Query;
+import org.hibernate.sql.Template;
+import org.hibernate.sql.ordering.antlr.ColumnMapper;
+import org.hibernate.sql.ordering.antlr.ColumnReference;
+import org.hibernate.sql.ordering.antlr.FormulaReference;
+import org.hibernate.sql.ordering.antlr.OrderByAliasResolver;
+import org.hibernate.sql.ordering.antlr.OrderByTranslation;
+import org.hibernate.sql.ordering.antlr.SqlValueReference;
 import org.hibernate.type.CustomType;
 
 /**
@@ -41,12 +58,12 @@ public class QueryBuilder {
 	/**
 	 * "where" parameters for this query. Each parameter element of the list for one alias from the "from" part.
 	 */
-	private final List<Parameters> parameters = new ArrayList<Parameters>();
+	private final List<Parameters> parameters = new ArrayList<>();
 
 	/**
 	 * A list of triples (from entity name, alias name, whether to select the entity).
 	 */
-	private final List<Triple<String, String, Boolean>> froms;
+	private final List<JoinParameter> froms;
 	/**
 	 * A list of triples (alias, property name, order ascending?).
 	 */
@@ -56,26 +73,38 @@ public class QueryBuilder {
 	 */
 	private final List<String> projections;
 
+	private final List<Pair<String, String>> orderFragments;
+
+	private final SessionFactoryImplementor sessionFactory;
+
 	/**
 	 * @param entityName Main entity which should be selected.
 	 * @param alias Alias of the entity
+	 * @param sessionFactory Session factory
 	 */
-	public QueryBuilder(String entityName, String alias) {
-		this( entityName, alias, new MutableInteger(), new MutableInteger() );
+	public QueryBuilder(String entityName, String alias, SessionFactoryImplementor sessionFactory) {
+		this( entityName, alias, new MutableInteger(), new MutableInteger(), sessionFactory );
 	}
 
-	private QueryBuilder(String entityName, String alias, MutableInteger aliasCounter, MutableInteger paramCounter) {
+	private QueryBuilder(
+			String entityName,
+			String alias,
+			MutableInteger aliasCounter,
+			MutableInteger paramCounter,
+			SessionFactoryImplementor sessionFactory) {
 		this.entityName = entityName;
 		this.alias = alias;
 		this.aliasCounter = aliasCounter;
 		this.paramCounter = paramCounter;
+		this.sessionFactory = sessionFactory;
 
 		final Parameters rootParameters = new Parameters( alias, "and", paramCounter );
 		parameters.add( rootParameters );
 
-		froms = new ArrayList<Triple<String, String, Boolean>>();
-		orders = new ArrayList<Triple<String, String, Boolean>>();
-		projections = new ArrayList<String>();
+		froms = new ArrayList<>();
+		orders = new ArrayList<>();
+		projections = new ArrayList<>();
+		orderFragments = new ArrayList<>();
 
 		addFrom( entityName, alias, true );
 	}
@@ -84,15 +113,17 @@ public class QueryBuilder {
 	private QueryBuilder(QueryBuilder other) {
 		this.entityName = other.entityName;
 		this.alias = other.alias;
+		this.sessionFactory = other.sessionFactory;
 		this.aliasCounter = other.aliasCounter.deepCopy();
 		this.paramCounter = other.paramCounter.deepCopy();
 		for (final Parameters params : other.parameters) {
 			this.parameters.add( params.deepCopy() );
 		}
 
-		froms = new ArrayList<Triple<String, String, Boolean>>( other.froms );
-		orders = new ArrayList<Triple<String, String, Boolean>>( other.orders );
-		projections = new ArrayList<String>( other.projections );
+		froms = new ArrayList<>( other.froms );
+		orders = new ArrayList<>( other.orders );
+		projections = new ArrayList<>( other.projections );
+		orderFragments = new ArrayList<>( other.orderFragments );
 	}
 
 	public QueryBuilder deepCopy() {
@@ -114,19 +145,25 @@ public class QueryBuilder {
 	 * @param select whether the entity should be selected
 	 */
 	public void addFrom(String entityName, String alias, boolean select) {
-		froms.add( Triple.make( entityName, alias, select ) );
+		CrossJoinParameter joinParameter = new CrossJoinParameter( entityName, alias, select );
+		froms.add( joinParameter );
+	}
+
+	public Parameters addJoin(JoinType joinType, String entityName, String alias, boolean select) {
+		Parameters joinConditionParameters = new Parameters( alias, Parameters.AND, paramCounter );
+		InnerOuterJoinParameter joinParameter = new InnerOuterJoinParameter(
+				joinType,
+				entityName,
+				alias,
+				select,
+				joinConditionParameters
+		);
+		froms.add( joinParameter );
+		return joinConditionParameters;
 	}
 
 	public String generateAlias() {
 		return "_e" + aliasCounter.getAndIncrease();
-	}
-
-	/**
-	 * @return A sub-query builder for the same entity (with an auto-generated alias). The sub-query can
-	 *         be later used as a value of a parameter.
-	 */
-	public QueryBuilder newSubQueryBuilder() {
-		return newSubQueryBuilder( entityName, generateAlias() );
 	}
 
 	/**
@@ -137,7 +174,7 @@ public class QueryBuilder {
 	 *         be later used as a value of a parameter.
 	 */
 	public QueryBuilder newSubQueryBuilder(String entityName, String alias) {
-		return new QueryBuilder( entityName, alias, aliasCounter, paramCounter );
+		return new QueryBuilder( entityName, alias, aliasCounter, paramCounter, sessionFactory );
 	}
 
 	public Parameters getRootParameters() {
@@ -152,6 +189,10 @@ public class QueryBuilder {
 
 	public void addOrder(String alias, String propertyName, boolean ascending) {
 		orders.add( Triple.make( alias, propertyName, ascending ) );
+	}
+
+	public void addOrderFragment(String alias, String fragment) {
+		orderFragments.add( Pair.make( alias, fragment ) );
 	}
 
 	public void addProjection(String function, String alias, String propertyName, boolean distinct) {
@@ -185,10 +226,14 @@ public class QueryBuilder {
 			StringTools.append( sb, getSelectAliasList().iterator(), ", " );
 		}
 		sb.append( " from " );
-		// all from entities with aliases, separated with commas
-		StringTools.append( sb, getFromList().iterator(), ", " );
-		// where part - rootParameters
+		// all from entities with aliases
 		boolean first = true;
+		for (final JoinParameter joinParameter : froms) {
+			joinParameter.appendJoin( first, sb, queryParamValues );
+			first = false;
+		}
+		// where part - rootParameters
+		first = true;
 		for (final Parameters params : parameters) {
 			if (!params.isEmpty()) {
 				if (first) {
@@ -202,17 +247,54 @@ public class QueryBuilder {
 			}
 		}
 		// orders
-		if ( orders.size() > 0 ) {
+		if ( !orders.isEmpty() ) {
 			sb.append( " order by " );
 			StringTools.append( sb, getOrderList().iterator(), ", " );
+		}
+		else if ( !orderFragments.isEmpty() ) {
+			sb.append( " order by " );
+
+			final Iterator<Pair<String, String>> fragmentIterator = orderFragments.iterator();
+			while( fragmentIterator.hasNext() ) {
+				final Pair<String, String> fragment = fragmentIterator.next();
+				final OrderByTranslation orderByFragmentTranslation = Template.translateOrderBy(
+						fragment.getSecond(),
+						new ColumnMapper() {
+							@Override
+							public SqlValueReference[] map(String reference) throws HibernateException {
+								return new SqlValueReference[ 0 ];
+							}
+						},
+						sessionFactory,
+						sessionFactory.getJdbcServices().getDialect(),
+						sessionFactory.getSqlFunctionRegistry()
+				);
+
+				sb.append( orderByFragmentTranslation.injectAliases( new QueryOrderByAliasResolver( fragment.getFirst() ) ) );
+				if ( fragmentIterator.hasNext() ) {
+					sb.append( ", " );
+				}
+			}
+		}
+	}
+
+	private class QueryOrderByAliasResolver implements OrderByAliasResolver {
+		private String alias;
+		public QueryOrderByAliasResolver(String alias) {
+			this.alias = alias;
+		}
+
+		@Override
+		public String resolveTableAlias(String columnReference) {
+			return alias;
 		}
 	}
 
 	private List<String> getSelectAliasList() {
-		final List<String> aliasList = new ArrayList<String>();
-		for ( Triple<String, String, Boolean> from : froms ) {
-			if ( from.getThird() ) {
-				aliasList.add( from.getSecond() );
+		final List<String> aliasList = new ArrayList<>();
+		for ( JoinParameter from : froms ) {
+			if ( from.isSelect() ) {
+				aliasList.add( from.getAlias() );
 			}
 		}
 
@@ -223,17 +305,8 @@ public class QueryBuilder {
 		return alias;
 	}
 
-	private List<String> getFromList() {
-		final List<String> fromList = new ArrayList<String>();
-		for ( Triple<String, String, Boolean> from : froms ) {
-			fromList.add( from.getFirst() + " " + from.getSecond() );
-		}
-
-		return fromList;
-	}
-
 	private List<String> getOrderList() {
-		final List<String> orderList = new ArrayList<String>();
+		final List<String> orderList = new ArrayList<>();
 		for ( Triple<String, String, Boolean> order : orders ) {
 			orderList.add( order.getFirst() + "." + order.getSecond() + " " + (order.getThird() ? "asc" : "desc") );
 		}
@@ -243,7 +316,7 @@ public class QueryBuilder {
 
 	public Query toQuery(Session session) {
 		final StringBuilder querySb = new StringBuilder();
-		final Map<String, Object> queryParamValues = new HashMap<String, Object>();
+		final Map<String, Object> queryParamValues = new HashMap<>();
 
 		build( querySb, queryParamValues );
 
@@ -263,4 +336,78 @@ public class QueryBuilder {
 		}
 		return query;
 	}
+
+	private abstract static class JoinParameter {
+
+		private final String alias;
+		private final boolean select;
+
+		protected JoinParameter(String alias, boolean select) {
+			this.alias = alias;
+			this.select = select;
+		}
+
+		public String getAlias() {
+			return alias;
+		}
+
+		public boolean isSelect() {
+			return select;
+		}
+
+		public abstract void appendJoin(boolean firstFromElement, StringBuilder builder, Map<String, Object> queryParamValues);
+
+	}
+
+	private static class CrossJoinParameter extends JoinParameter {
+
+		private final String entityName;
+
+		public CrossJoinParameter(String entityName, String alias, boolean select) {
+			super( alias, select );
+			this.entityName = entityName;
+		}
+
+		@Override
+		public void appendJoin(boolean firstFromElement, StringBuilder builder, Map<String, Object> queryParamValues) {
+			if ( !firstFromElement ) {
+				builder.append( ", " );
+			}
+			builder.append( entityName ).append( ' ' ).append( getAlias() );
+		}
+
+	}
+
+	private static class InnerOuterJoinParameter extends JoinParameter {
+
+		private final JoinType joinType;
+		private final String entityName;
+		private final Parameters joinConditionParameters;
+
+		public InnerOuterJoinParameter(
+				JoinType joinType,
+				String entityName,
+				String alias,
+				boolean select,
+				Parameters joinConditionParameters) {
+			super(alias, select);
+			this.joinType = joinType;
+			this.entityName = entityName;
+			this.joinConditionParameters = joinConditionParameters;
+		}
+
+		@Override
+		public void appendJoin(boolean firstFromElement, StringBuilder builder, Map<String, Object> queryParamValues) {
+			if (firstFromElement) {
+				throw new IllegalArgumentException( "An inner/outer join cannot come as first 'from element'" );
+			}
+			builder.append( ' ' ).append( joinType.name()
+					.toLowerCase( Locale.US ) ).append( " join " )
+					.append( entityName ).append( ' ' )
+					.append( getAlias() ).append( " on " );
+			joinConditionParameters.build( builder, queryParamValues );
+		}
+
+	}
+
 }

@@ -8,12 +8,12 @@ package org.hibernate.test.jpa.removed;
 
 import java.math.BigDecimal;
 
-import org.junit.Test;
-
 import org.hibernate.Session;
+
 import org.hibernate.test.jpa.AbstractJPATest;
 import org.hibernate.test.jpa.Item;
 import org.hibernate.test.jpa.Part;
+import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;

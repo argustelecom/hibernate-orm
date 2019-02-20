@@ -22,30 +22,23 @@ import org.hibernate.envers.tools.Pair;
  * @author Adam Warski (adam at warski dot org)
  * @author HernпїЅn Chanfreau
  * @author Lukasz Antoniak (lukasz dot antoniak at gmail dot com)
+ * @author Chris Cranford
  */
 public abstract class Tools {
 	public static <K, V> Map<K, V> newHashMap() {
-		return new HashMap<K, V>();
+		return new HashMap<>();
 	}
 
 	public static <E> Set<E> newHashSet() {
-		return new HashSet<E>();
+		return new HashSet<>();
 	}
 
 	public static <K, V> Map<K, V> newLinkedHashMap() {
-		return new LinkedHashMap<K, V>();
-	}
-
-	public static boolean objectsEqual(Object obj1, Object obj2) {
-		if ( obj1 == null ) {
-			return obj2 == null;
-		}
-
-		return obj1.equals( obj2 );
+		return new LinkedHashMap<>();
 	}
 
 	public static <T> List<T> iteratorToList(Iterator<T> iter) {
-		final List<T> ret = new ArrayList<T>();
+		final List<T> ret = new ArrayList<>();
 		while ( iter.hasNext() ) {
 			ret.add( iter.next() );
 		}
@@ -58,7 +51,7 @@ public abstract class Tools {
 			return (List<X>) collection;
 		}
 		else {
-			List<X> list = new ArrayList<X>();
+			List<X> list = new ArrayList<>();
 			list.addAll( collection );
 			return list;
 		}
@@ -87,7 +80,7 @@ public abstract class Tools {
 	 * @return A list of pairs: ((0, element_at_index_0), (1, element_at_index_1), ...)
 	 */
 	public static <T> List<Pair<Integer, T>> listToIndexElementPairList(List<T> list) {
-		final List<Pair<Integer, T>> ret = new ArrayList<Pair<Integer, T>>();
+		final List<Pair<Integer, T>> ret = new ArrayList<>();
 		final Iterator<T> listIter = list.iterator();
 		for ( int i = 0; i < list.size(); i++ ) {
 			ret.add( Pair.make( i, listIter.next() ) );

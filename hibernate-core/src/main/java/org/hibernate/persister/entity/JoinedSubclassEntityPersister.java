@@ -11,8 +11,8 @@ import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.QueryException;
 import org.hibernate.boot.model.relational.Database;
-import org.hibernate.cache.spi.access.EntityRegionAccessStrategy;
-import org.hibernate.cache.spi.access.NaturalIdRegionAccessStrategy;
+import org.hibernate.cache.spi.access.EntityDataAccess;
+import org.hibernate.cache.spi.access.NaturalIdDataAccess;
 import org.hibernate.engine.OptimisticLockStyle;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 import org.hibernate.engine.spi.ExecuteUpdateResultCheckStyle;
@@ -101,6 +101,8 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 
 	private final boolean[] subclassTableSequentialSelect;
 	private final boolean[] subclassTableIsLazyClosure;
+	private final boolean[] isInverseSubclassTable;
+	private final boolean[] isNullableSubclassTable;
 
 	// subclass discrimination works by assigning particular
 	// values to certain combinations of null primary key
@@ -123,13 +125,14 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 	private final int coreTableSpan;
 	// only contains values for SecondaryTables, ie. not tables part of the "coreTableSpan"
 	private final boolean[] isNullableTable;
+	private final boolean[] isInverseTable;
 
 	//INITIALIZATION:
 
 	public JoinedSubclassEntityPersister(
 			final PersistentClass persistentClass,
-			final EntityRegionAccessStrategy cacheAccessStrategy,
-			final NaturalIdRegionAccessStrategy naturalIdRegionAccessStrategy,
+			final EntityDataAccess cacheAccessStrategy,
+			final NaturalIdDataAccess naturalIdRegionAccessStrategy,
 			final PersisterCreationContext creationContext) throws HibernateException {
 
 		super( persistentClass, cacheAccessStrategy, naturalIdRegionAccessStrategy, creationContext );
@@ -235,15 +238,21 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 
 		//Span of the tableNames directly mapped by this entity and super-classes, if any
 		coreTableSpan = tableNames.size();
+		tableSpan = persistentClass.getJoinClosureSpan() + coreTableSpan;
 
-		isNullableTable = new boolean[persistentClass.getJoinClosureSpan()];
+		isNullableTable = new boolean[tableSpan];
+		isInverseTable = new boolean[tableSpan];
 
-		int tableIndex = 0;
 		Iterator joinItr = persistentClass.getJoinClosureIterator();
-		while ( joinItr.hasNext() ) {
+		for ( int tableIndex = 0; joinItr.hasNext(); tableIndex++ ) {
 			Join join = (Join) joinItr.next();
 
-			isNullableTable[tableIndex++] = join.isOptional();
+			isNullableTable[tableIndex] = join.isOptional() ||
+					creationContext.getSessionFactory()
+							.getSessionFactoryOptions()
+							.getJpaCompliance()
+							.isJpaCacheComplianceEnabled();
+			isInverseTable[tableIndex] = join.isInverse();
 
 			Table table = join.getTable();
 			final String tableName = determineTableName( table, jdbcEnvironment );
@@ -280,6 +289,8 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 		ArrayList<Boolean> isConcretes = new ArrayList<Boolean>();
 		ArrayList<Boolean> isDeferreds = new ArrayList<Boolean>();
 		ArrayList<Boolean> isLazies = new ArrayList<Boolean>();
+		ArrayList<Boolean> isInverses = new ArrayList<Boolean>();
+		ArrayList<Boolean> isNullables = new ArrayList<Boolean>();
 
 		keyColumns = new ArrayList<String[]>();
 		tItr = persistentClass.getSubclassTableClosureIterator();
@@ -288,6 +299,8 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 			isConcretes.add( persistentClass.isClassOrSuperclassTable( tab ) );
 			isDeferreds.add( Boolean.FALSE );
 			isLazies.add( Boolean.FALSE );
+			isInverses.add( Boolean.FALSE );
+			isNullables.add( Boolean.FALSE );
 			final String tableName = determineTableName( tab, jdbcEnvironment );
 			subclassTableNames.add( tableName );
 			String[] key = new String[idColumnSpan];
@@ -306,6 +319,13 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 
 			isConcretes.add( persistentClass.isClassOrSuperclassTable( joinTable ) );
 			isDeferreds.add( join.isSequentialSelect() );
+			isInverses.add( join.isInverse() );
+			isNullables.add(
+					join.isOptional() || creationContext.getSessionFactory()
+							.getSessionFactoryOptions()
+							.getJpaCompliance()
+							.isJpaCacheComplianceEnabled()
+			);
 			isLazies.add( join.isLazy() );
 
 			String joinTableName = determineTableName( joinTable, jdbcEnvironment );
@@ -323,6 +343,8 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 		isClassOrSuperclassTable = ArrayHelper.toBooleanArray( isConcretes );
 		subclassTableSequentialSelect = ArrayHelper.toBooleanArray( isDeferreds );
 		subclassTableIsLazyClosure = ArrayHelper.toBooleanArray( isLazies );
+		isInverseSubclassTable = ArrayHelper.toBooleanArray( isInverses );
+		isNullableSubclassTable = ArrayHelper.toBooleanArray( isNullables );
 
 		constraintOrderedTableNames = new String[naturalOrderSubclassTableNameClosure.length];
 		constraintOrderedKeyColumnNames = new String[naturalOrderSubclassTableNameClosure.length][];
@@ -342,7 +364,6 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 		 * tableNames -> CLIENT, PERSON
 		 */
 
-		tableSpan = naturalOrderTableNames.length;
 		this.tableNames = reverse( naturalOrderTableNames, coreTableSpan );
 		tableKeyColumns = reverse( naturalOrderTableKeyColumns, coreTableSpan );
 		tableKeyColumnReaders = reverse( naturalOrderTableKeyColumnReaders, coreTableSpan );
@@ -369,6 +390,8 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 		PersistentClass pc = persistentClass;
 		int jk = coreTableSpan - 1;
 		while ( pc != null ) {
+			isNullableTable[jk] = false;
+			isInverseTable[jk] = false;
 			customSQLInsert[jk] = pc.getCustomSQLInsert();
 			insertCallable[jk] = customSQLInsert[jk] != null && pc.isCustomInsertCallable();
 			insertResultCheckStyles[jk] = pc.getCustomSQLInsertCheckStyle() == null
@@ -398,6 +421,13 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 		int j = coreTableSpan;
 		while ( joinItr.hasNext() ) {
 			Join join = (Join) joinItr.next();
+
+			isInverseTable[j] = join.isInverse();
+			isNullableTable[j] = join.isOptional()
+					|| creationContext.getSessionFactory()
+					.getSessionFactoryOptions()
+					.getJpaCompliance()
+					.isJpaCacheComplianceEnabled();
 
 			customSQLInsert[j] = join.getCustomSQLInsert();
 			insertCallable[j] = customSQLInsert[j] != null && join.isCustomInsertCallable();
@@ -718,11 +748,14 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 		}
 	}
 
+	@Override
 	protected boolean isNullableTable(int j) {
-		if ( j < coreTableSpan ) {
-			return false;
-		}
-		return isNullableTable[j - coreTableSpan];
+		return isNullableTable[j];
+	}
+
+	@Override
+	protected boolean isInverseTable(int j) {
+		return isInverseTable[j];
 	}
 
 	protected boolean isSubclassTableSequentialSelect(int j) {
@@ -737,6 +770,16 @@ public class JoinedSubclassEntityPersister extends AbstractEntityPersister {
 
 	public String getSubclassPropertyTableName(int i) {
 		return subclassTableNameClosure[subclassPropertyTableNumberClosure[i]];
+	}
+
+	@Override
+	protected boolean isInverseSubclassTable(int j) {
+		return isInverseSubclassTable[j];
+	}
+
+	@Override
+	protected boolean isNullableSubclassTable(int j) {
+		return isNullableSubclassTable[j];
 	}
 
 	public Type getDiscriminatorType() {

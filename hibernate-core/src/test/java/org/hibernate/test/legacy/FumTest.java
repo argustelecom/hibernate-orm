@@ -40,6 +40,8 @@ import org.hibernate.LockMode;
 import org.hibernate.Query;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import org.hibernate.cfg.Configuration;
+import org.hibernate.cfg.Environment;
 import org.hibernate.criterion.MatchMode;
 import org.hibernate.criterion.Restrictions;
 import org.hibernate.dialect.AbstractHANADialect;
@@ -49,6 +51,9 @@ import org.hibernate.dialect.MySQLDialect;
 import org.hibernate.dialect.PointbaseDialect;
 import org.hibernate.dialect.SybaseASE15Dialect;
 import org.hibernate.dialect.TimesTenDialect;
+
+import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.RequiresDialectFeature;
 import org.hibernate.testing.SkipForDialect;
 import org.hibernate.transform.Transformers;
 import org.hibernate.type.CalendarType;
@@ -58,6 +63,7 @@ import org.hibernate.type.StringType;
 import org.hibernate.type.Type;
 import org.junit.Test;
 
+@RequiresDialectFeature(DialectChecks.SupportsNoColumnInsert.class)
 public class FumTest extends LegacyTestCase {
 	private static short fumKeyShort = 1;
 
@@ -88,6 +94,15 @@ public class FumTest extends LegacyTestCase {
 			"legacy/Simple.hbm.xml",
 			"legacy/Middle.hbm.xml"
 		};
+	}
+
+	@Override
+	public void configure(Configuration cfg) {
+		super.configure(cfg);
+		Properties props = new Properties();
+		props.put( Environment.ORDER_INSERTS, "true" );
+		props.put( Environment.STATEMENT_BATCH_SIZE, "10" );
+		cfg.addProperties( props );
 	}
 
 	@Test

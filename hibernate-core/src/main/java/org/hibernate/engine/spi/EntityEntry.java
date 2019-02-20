@@ -9,9 +9,9 @@ package org.hibernate.engine.spi;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.util.Set;
 
 import org.hibernate.LockMode;
+import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.persister.entity.EntityPersister;
 
 /**
@@ -37,6 +37,10 @@ public interface EntityEntry {
 	Serializable getId();
 
 	Object[] getLoadedState();
+
+	Object getLoadedValue(String propertyName);
+
+	void overwriteLoadedStateCollectionValue(String propertyName, PersistentCollection collection);
 
 	Object[] getDeletedState();
 
@@ -85,9 +89,7 @@ public interface EntityEntry {
 	 */
 	void postInsert(Object[] insertedState);
 
-	boolean isNullifiable(boolean earlyInsert, SessionImplementor session);
-
-	Object getLoadedValue(String propertyName);
+	boolean isNullifiable(boolean earlyInsert, SharedSessionContractImplementor session);
 
 	/**
 	 * Not sure this is the best method name, but the general idea here is to return {@code true} if the entity can

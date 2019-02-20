@@ -7,6 +7,8 @@
 package org.hibernate.envers.internal.entities.mapper.relation.lazy.initializor;
 
 import java.lang.reflect.InvocationTargetException;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -43,18 +45,25 @@ public class BasicCollectionInitializor<T extends Collection> extends AbstractCo
 	@Override
 	@SuppressWarnings("unchecked")
 	protected T initializeCollection(int size) {
-		try {
-			return (T) ReflectHelper.getDefaultConstructor( collectionClass ).newInstance();
-		}
-		catch (InstantiationException e) {
-			throw new AuditException( e );
-		}
-		catch (IllegalAccessException e) {
-			throw new AuditException( e );
-		}
-		catch (InvocationTargetException e) {
-			throw new AuditException( e );
-		}
+		return AccessController.doPrivileged(
+				new PrivilegedAction<T>() {
+					@Override
+					public T run() {
+						try {
+							return (T) ReflectHelper.getDefaultConstructor( collectionClass ).newInstance();
+						}
+						catch (InstantiationException e) {
+							throw new AuditException( e );
+						}
+						catch (IllegalAccessException e) {
+							throw new AuditException( e );
+						}
+						catch (InvocationTargetException e) {
+							throw new AuditException( e );
+						}
+					}
+				}
+		);
 	}
 
 	@Override
@@ -64,7 +73,7 @@ public class BasicCollectionInitializor<T extends Collection> extends AbstractCo
 		// otherwise it will be a List
 		Object elementData = collectionRow;
 		if ( collectionRow instanceof java.util.List ) {
-			elementData = ((List) collectionRow).get( elementComponentData.getComponentIndex() );
+			elementData = ( (List) collectionRow ).get( elementComponentData.getComponentIndex() );
 		}
 
 		// If the target entity is not audited, the elements may be the entities already, so we have to check

@@ -9,8 +9,10 @@ package org.hibernate.action.internal;
 import java.io.Serializable;
 
 import org.hibernate.HibernateException;
+import org.hibernate.collection.internal.AbstractPersistentCollection;
 import org.hibernate.collection.spi.PersistentCollection;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.CollectionEntry;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.persister.collection.CollectionPersister;
 
 /**
@@ -34,12 +36,27 @@ public final class QueuedOperationCollectionAction extends CollectionAction {
 			final PersistentCollection collection,
 			final CollectionPersister persister,
 			final Serializable id,
-			final SessionImplementor session) {
+			final SharedSessionContractImplementor session) {
 		super( persister, collection, id, session );
 	}
 
 	@Override
 	public void execute() throws HibernateException {
+		// this QueuedOperationCollectionAction has to be executed before any other
+		// CollectionAction involving the same collection.
+
 		getPersister().processQueuedOps( getCollection(), getKey(), getSession() );
+
+		// TODO: It would be nice if this could be done safely by CollectionPersister#processQueuedOps;
+		//       Can't change the SPI to do this though.
+		((AbstractPersistentCollection) getCollection() ).clearOperationQueue();
+
+		// The other CollectionAction types call CollectionEntry#afterAction, which
+		// clears the dirty flag. We don't want to call CollectionEntry#afterAction unless
+		// there is no other CollectionAction that will be executed on the same collection.
+		final CollectionEntry ce = getSession().getPersistenceContext().getCollectionEntry( getCollection() );
+		if ( !ce.isDoremove() && !ce.isDoupdate() && !ce.isDorecreate() ) {
+			ce.afterAction( getCollection() );
+		}
 	}
 }

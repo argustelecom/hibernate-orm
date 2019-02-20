@@ -21,7 +21,6 @@ import org.hibernate.boot.registry.classloading.spi.ClassLoadingException;
 import org.hibernate.cfg.Environment;
 import org.hibernate.engine.jdbc.connections.internal.ConnectionProviderInitiator;
 import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
-import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.service.UnknownUnwrapTypeException;
 import org.hibernate.service.spi.Configurable;
@@ -71,7 +70,7 @@ public class C3P0ConnectionProvider
 	@SuppressWarnings("UnnecessaryUnboxing")
 	public Connection getConnection() throws SQLException {
 		final Connection c = ds.getConnection();
-		if ( isolation != null ) {
+		if ( isolation != null && !isolation.equals( c.getTransactionIsolation() ) ) {
 			c.setTransactionIsolation( isolation.intValue() );
 		}
 		if ( c.getAutoCommit() != autocommit ) {

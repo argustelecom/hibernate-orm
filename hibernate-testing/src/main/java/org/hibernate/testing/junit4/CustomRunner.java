@@ -261,11 +261,47 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 			}
 		}
 
+
 		// @RequiresDialects & @RequiresDialect
-		for ( RequiresDialect requiresDialectAnn : Helper.collectAnnotations(
+		final List<RequiresDialect> requiresDialects = Helper.collectAnnotations(
 				RequiresDialect.class, RequiresDialects.class, frameworkMethod, getTestClass()
-		) ) {
-			boolean foundMatch = false;
+		);
+
+		if ( !requiresDialects.isEmpty() && !isDialectMatchingRequired( requiresDialects ) ) {
+			return buildIgnore( requiresDialects );
+		}
+
+		// @RequiresDialectFeature
+		final List<RequiresDialectFeature> requiresDialectFeatures = Helper.locateAllAnnotations(
+				RequiresDialectFeature.class,
+				frameworkMethod,
+				getTestClass()
+		);
+
+		if ( !requiresDialectFeatures.isEmpty() ) {
+			for ( RequiresDialectFeature requiresDialectFeature : requiresDialectFeatures ) {
+				try {
+					for ( Class<? extends DialectCheck> checkClass : requiresDialectFeature.value() ) {
+						if ( !checkClass.newInstance().isMatch( dialect ) ) {
+							return buildIgnore( requiresDialectFeature );
+						}
+					}
+				}
+				catch (RuntimeException e) {
+					throw e;
+				}
+				catch (Exception e) {
+					throw new RuntimeException( "Unable to instantiate DialectCheck", e );
+				}
+			}
+		}
+
+		return null;
+	}
+
+	private boolean isDialectMatchingRequired(List<RequiresDialect> requiresDialects) {
+		boolean foundMatch = false;
+		for ( RequiresDialect requiresDialectAnn : requiresDialects ) {
 			for ( Class<? extends Dialect> dialectClass : requiresDialectAnn.value() ) {
 				foundMatch = requiresDialectAnn.strictMatching()
 						? dialectClass.equals( dialect.getClass() )
@@ -274,36 +310,11 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 					break;
 				}
 			}
-			if ( !foundMatch ) {
-				return buildIgnore( requiresDialectAnn );
+			if ( foundMatch ) {
+				break;
 			}
 		}
-
-		// @RequiresDialectFeature
-		RequiresDialectFeature requiresDialectFeatureAnn = Helper.locateAnnotation(
-				RequiresDialectFeature.class,
-				frameworkMethod,
-				getTestClass()
-		);
-		if ( requiresDialectFeatureAnn != null ) {
-			try {
-				boolean foundMatch = false;
-				for ( Class<? extends DialectCheck> checkClass : requiresDialectFeatureAnn.value() ) {
-					foundMatch = checkClass.newInstance().isMatch( dialect );
-					if ( !foundMatch ) {
-						return buildIgnore( requiresDialectFeatureAnn );
-					}
-				}
-			}
-			catch (RuntimeException e) {
-				throw e;
-			}
-			catch (Exception e) {
-				throw new RuntimeException( "Unable to instantiate DialectCheck", e );
-			}
-		}
-
-		return null;
+		return foundMatch;
 	}
 
 	private Ignore buildIgnore(Skip skip) {
@@ -315,6 +326,10 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 	}
 
 	private Ignore buildIgnore(String reason, String comment, String jiraKey) {
+		return new IgnoreImpl( getIgnoreMessage( reason, comment, jiraKey ) );
+	}
+
+	private String getIgnoreMessage(String reason, String comment, String jiraKey) {
 		StringBuilder buffer = new StringBuilder( reason );
 		if ( StringHelper.isNotEmpty( comment ) ) {
 			buffer.append( "; " ).append( comment );
@@ -324,11 +339,24 @@ public class CustomRunner extends BlockJUnit4ClassRunner {
 			buffer.append( " (" ).append( jiraKey ).append( ')' );
 		}
 
-		return new IgnoreImpl( buffer.toString() );
+		return buffer.toString();
 	}
 
 	private Ignore buildIgnore(RequiresDialect requiresDialect) {
 		return buildIgnore( "@RequiresDialect non-match", requiresDialect.comment(), requiresDialect.jiraKey() );
+	}
+
+	private Ignore buildIgnore(List<RequiresDialect> requiresDialects) {
+		String ignoreMessage = "";
+		for ( RequiresDialect requiresDialect : requiresDialects ) {
+			ignoreMessage += getIgnoreMessage(
+					"@RequiresDialect non-match",
+					requiresDialect.comment(),
+					requiresDialect.jiraKey()
+			);
+			ignoreMessage += System.lineSeparator();
+		}
+		return new IgnoreImpl( ignoreMessage );
 	}
 
 	private Ignore buildIgnore(RequiresDialectFeature requiresDialectFeature) {

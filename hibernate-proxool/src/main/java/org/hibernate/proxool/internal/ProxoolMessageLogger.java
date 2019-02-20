@@ -6,7 +6,6 @@
  */
 package org.hibernate.proxool.internal;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.log.ConnectionPoolingLogger;
 
 import org.jboss.logging.annotations.LogMessage;
@@ -67,7 +66,7 @@ public interface ProxoolMessageLogger extends ConnectionPoolingLogger {
 	 *
 	 * @return The message
 	 */
-	@Message(value = "Exception occured when closing the Proxool pool", id = 30006)
+	@Message(value = "Exception occurred when closing the Proxool pool", id = 30006)
 	String exceptionClosingProxoolPool();
 
 	/**

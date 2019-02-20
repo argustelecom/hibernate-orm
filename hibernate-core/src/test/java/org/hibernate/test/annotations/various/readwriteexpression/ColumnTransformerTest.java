@@ -6,12 +6,14 @@
  */
 package org.hibernate.test.annotations.various.readwriteexpression;
 
-import org.junit.Test;
-
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.criterion.Restrictions;
+import org.hibernate.dialect.H2Dialect;
+
+import org.hibernate.testing.RequiresDialect;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 
@@ -19,7 +21,15 @@ import static org.junit.Assert.assertEquals;
  * @author Emmanuel Bernard
  */
 public class ColumnTransformerTest extends BaseCoreFunctionalTestCase {
+	/**
+	 * @implNote Limited to H2 because getting a good expression to use for
+	 * {@link Staff#kooky} that works on all databases is challenging and
+	 * really what happens on the "database side" here is not relevant -
+	 * the issue being tested is how Hibernate applies the table aliases to
+	 * column references in the expression.
+	 */
 	@Test
+	@RequiresDialect(H2Dialect.class )
 	public void testCustomColumnReadAndWrite() throws Exception{
 		Session s = openSession();
 		Transaction t = s.beginTransaction();
@@ -59,9 +69,9 @@ public class ColumnTransformerTest extends BaseCoreFunctionalTestCase {
 		assertEquals(HEIGHT_INCHES, staff.getSizeInInches(), 0.01d);
 		
 		// Test predicate and entity load via HQL
-		staff = (Staff)s.createQuery("from Staff s where s.sizeInInches between ? and ?")
-			.setDouble(0, HEIGHT_INCHES - 0.01d)
-			.setDouble(1, HEIGHT_INCHES + 0.01d)
+		staff = (Staff)s.createQuery("from Staff s where s.sizeInInches between ?1 and ?2")
+			.setDouble(1, HEIGHT_INCHES - 0.01d)
+			.setDouble(2, HEIGHT_INCHES + 0.01d)
 			.uniqueResult();
 		assertEquals(HEIGHT_INCHES, staff.getSizeInInches(), 0.01d);
 

@@ -39,6 +39,7 @@ import org.hibernate.loader.plan.spi.EntityReturn;
 import org.hibernate.loader.plan.spi.FetchSource;
 import org.hibernate.loader.plan.spi.Return;
 import org.hibernate.persister.entity.Joinable;
+import org.hibernate.persister.walking.internal.FetchStrategyHelper;
 import org.hibernate.persister.walking.spi.AnyMappingDefinition;
 import org.hibernate.persister.walking.spi.AssociationAttributeDefinition;
 import org.hibernate.persister.walking.spi.AssociationKey;
@@ -661,10 +662,6 @@ public abstract class AbstractLoadPlanBuildingAssociationVisitationStrategy
 	@Override
 	public void foundCircularAssociation(AssociationAttributeDefinition attributeDefinition) {
 		final FetchStrategy fetchStrategy = determineFetchStrategy( attributeDefinition );
-		if ( fetchStrategy.getStyle() != FetchStyle.JOIN ) {
-			return; // nothing to do
-		}
-
 		final AssociationKey associationKey = attributeDefinition.getAssociationKey();
 
 		// go ahead and build the bidirectional fetch
@@ -794,8 +791,8 @@ public abstract class AbstractLoadPlanBuildingAssociationVisitationStrategy
 //		}
 //
 //		@Override
-//		public LockMode getLockMode() {
-//			return targetEntityReference.getLockMode();
+//		public LockMode getHibernateFlushMode() {
+//			return targetEntityReference.getHibernateFlushMode();
 //		}
 //
 //		@Override
@@ -833,9 +830,6 @@ public abstract class AbstractLoadPlanBuildingAssociationVisitationStrategy
 	protected boolean handleAssociationAttribute(AssociationAttributeDefinition attributeDefinition) {
 		// todo : this seems to not be correct for one-to-one
 		final FetchStrategy fetchStrategy = determineFetchStrategy( attributeDefinition );
-		if ( fetchStrategy.getTiming() != FetchTiming.IMMEDIATE ) {
-			return false;
-		}
 
 		final ExpandingFetchSource currentSource = currentSource();
 		currentSource.validateFetchPlan( fetchStrategy, attributeDefinition );
@@ -845,6 +839,7 @@ public abstract class AbstractLoadPlanBuildingAssociationVisitationStrategy
 			// for ANY mappings we need to build a Fetch:
 			//		1) fetch type is SELECT
 			//		2) (because the fetch cannot be a JOIN...) do not push it to the stack
+			// regardless of the fetch style, build the fetch
 			currentSource.buildAnyAttributeFetch(
 					attributeDefinition,
 					fetchStrategy
@@ -852,11 +847,13 @@ public abstract class AbstractLoadPlanBuildingAssociationVisitationStrategy
 			return false;
 		}
 		else if ( nature == AssociationAttributeDefinition.AssociationNature.ENTITY ) {
+			// regardless of the fetch style, build the fetch
 			EntityFetch fetch = currentSource.buildEntityAttributeFetch(
 					attributeDefinition,
 					fetchStrategy
 			);
-			if ( fetchStrategy.getStyle() == FetchStyle.JOIN ) {
+			if ( FetchStrategyHelper.isJoinFetched( fetchStrategy ) ) {
+				// only push to the stack if join fetched
 				pushToStack( (ExpandingFetchSource) fetch );
 				return true;
 			}
@@ -866,8 +863,13 @@ public abstract class AbstractLoadPlanBuildingAssociationVisitationStrategy
 		}
 		else {
 			// Collection
-			CollectionAttributeFetch fetch = currentSource.buildCollectionAttributeFetch( attributeDefinition, fetchStrategy );
-			if ( fetchStrategy.getStyle() == FetchStyle.JOIN ) {
+			// regardless of the fetch style, build the fetch
+			CollectionAttributeFetch fetch = currentSource.buildCollectionAttributeFetch(
+					attributeDefinition,
+					fetchStrategy
+			);
+			if ( FetchStrategyHelper.isJoinFetched( fetchStrategy ) ) {
+				// only push to the stack if join fetched
 				pushToCollectionStack( fetch );
 				return true;
 			}

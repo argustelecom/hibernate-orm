@@ -13,6 +13,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 
+import org.hibernate.type.descriptor.ValueBinder;
+import org.hibernate.type.descriptor.ValueExtractor;
+import org.hibernate.type.descriptor.WrapperOptions;
+import org.hibernate.type.descriptor.java.JavaTypeDescriptor;
+import org.hibernate.type.descriptor.sql.BasicBinder;
+import org.hibernate.type.descriptor.sql.BasicExtractor;
+import org.hibernate.type.descriptor.sql.SqlTypeDescriptor;
+
 import org.geolatte.geom.ByteBuffer;
 import org.geolatte.geom.ByteOrder;
 import org.geolatte.geom.Geometry;
@@ -23,19 +31,10 @@ import org.geolatte.geom.codec.Wkt;
 import org.geolatte.geom.codec.WktDecoder;
 import org.postgresql.util.PGobject;
 
-import org.hibernate.type.descriptor.ValueBinder;
-import org.hibernate.type.descriptor.ValueExtractor;
-import org.hibernate.type.descriptor.WrapperOptions;
-import org.hibernate.type.descriptor.java.JavaTypeDescriptor;
-import org.hibernate.type.descriptor.sql.BasicBinder;
-import org.hibernate.type.descriptor.sql.BasicExtractor;
-import org.hibernate.type.descriptor.sql.SqlTypeDescriptor;
-
 /**
  * Type Descriptor for the Postgis Geometry type
  *
  * @author Karel Maesen, Geovise BVBA
- *
  */
 public class PGGeometryTypeDescriptor implements SqlTypeDescriptor {
 
@@ -44,6 +43,34 @@ public class PGGeometryTypeDescriptor implements SqlTypeDescriptor {
 	 * An instance of this class
 	 */
 	public static final PGGeometryTypeDescriptor INSTANCE = new PGGeometryTypeDescriptor();
+
+	public static Geometry<?> toGeometry(Object object) {
+		if ( object == null ) {
+			return null;
+		}
+		ByteBuffer buffer = null;
+		if ( object instanceof PGobject ) {
+			String pgValue = ( (PGobject) object ).getValue();
+
+			if ( pgValue.startsWith( "00" ) || pgValue.startsWith( "01" ) ) {
+				//we have a WKB because this pgValue starts with the bit-order byte
+				buffer = ByteBuffer.from( pgValue );
+				final WkbDecoder decoder = Wkb.newDecoder( Wkb.Dialect.POSTGIS_EWKB_1 );
+				return decoder.decode( buffer );
+
+			}
+			else {
+				return parseWkt( pgValue );
+			}
+
+		}
+		throw new IllegalStateException( "Received object of type " + object.getClass().getCanonicalName() );
+	}
+
+	private static Geometry<?> parseWkt(String pgValue) {
+		final WktDecoder decoder = Wkt.newDecoder( Wkt.Dialect.POSTGIS_EWKT_1 );
+		return decoder.decode( pgValue );
+	}
 
 	@Override
 	public int getSqlType() {
@@ -61,19 +88,25 @@ public class PGGeometryTypeDescriptor implements SqlTypeDescriptor {
 			@Override
 			protected void doBind(PreparedStatement st, X value, int index, WrapperOptions options)
 					throws SQLException {
-				final WkbEncoder encoder = Wkb.newEncoder( Wkb.Dialect.POSTGIS_EWKB_1 );
-				final Geometry geometry = getJavaDescriptor().unwrap( value, Geometry.class, options );
-				final byte[] bytes = encoder.encode( geometry, ByteOrder.NDR ).toByteArray();
-				st.setBytes( index, bytes );
+				final PGobject obj = toPGobject( value, options );
+				st.setObject( index, obj );
 			}
 
 			@Override
 			protected void doBind(CallableStatement st, X value, String name, WrapperOptions options)
 					throws SQLException {
+				final PGobject obj = toPGobject( value, options );
+				st.setObject( name, obj );
+			}
+
+			private PGobject toPGobject(X value, WrapperOptions options) throws SQLException {
 				final WkbEncoder encoder = Wkb.newEncoder( Wkb.Dialect.POSTGIS_EWKB_1 );
 				final Geometry geometry = getJavaDescriptor().unwrap( value, Geometry.class, options );
-				final byte[] bytes = encoder.encode( geometry, ByteOrder.NDR ).toByteArray();
-				st.setBytes( name, bytes );
+				final String hexString = encoder.encode( geometry, ByteOrder.NDR ).toString();
+				final PGobject obj = new PGobject();
+				obj.setType( "geometry" );
+				obj.setValue( hexString );
+				return obj;
 			}
 
 		};
@@ -99,25 +132,5 @@ public class PGGeometryTypeDescriptor implements SqlTypeDescriptor {
 				return getJavaDescriptor().wrap( toGeometry( statement.getObject( name ) ), options );
 			}
 		};
-	}
-
-	public static Geometry toGeometry(Object object) {
-		if ( object == null ) {
-			return null;
-		}
-		ByteBuffer buffer = null;
-		if ( object instanceof PGobject ) {
-			String pgValue = ((PGobject) object ).getValue();
-			if (pgValue.charAt( 0 ) == 'S') { // /we have a Wkt value
-				final WktDecoder decoder = Wkt.newDecoder( Wkt.Dialect.POSTGIS_EWKT_1 );
-				return decoder.decode(pgValue);
-			}
-			else {
-				buffer = ByteBuffer.from( pgValue );
-				final WkbDecoder decoder = Wkb.newDecoder( Wkb.Dialect.POSTGIS_EWKB_1 );
-				return decoder.decode( buffer );
-			}
-		}
-		throw new IllegalStateException( "Received object of type " + object.getClass().getCanonicalName() );
 	}
 }

@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.hibernate.EntityMode;
 import org.hibernate.HibernateException;
@@ -19,8 +20,8 @@ import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.MappingException;
 import org.hibernate.bytecode.spi.BytecodeEnhancementMetadata;
-import org.hibernate.cache.spi.access.EntityRegionAccessStrategy;
-import org.hibernate.cache.spi.access.NaturalIdRegionAccessStrategy;
+import org.hibernate.cache.spi.access.EntityDataAccess;
+import org.hibernate.cache.spi.access.NaturalIdDataAccess;
 import org.hibernate.cache.spi.entry.CacheEntry;
 import org.hibernate.cache.spi.entry.CacheEntryStructure;
 import org.hibernate.cache.spi.entry.StandardCacheEntryImpl;
@@ -31,7 +32,7 @@ import org.hibernate.engine.internal.TwoPhaseLoad;
 import org.hibernate.engine.spi.CascadeStyle;
 import org.hibernate.engine.spi.EntityEntryFactory;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.engine.spi.ValueInclusion;
 import org.hibernate.event.spi.EventSource;
 import org.hibernate.event.spi.PostLoadEvent;
@@ -40,9 +41,9 @@ import org.hibernate.id.IdentifierGenerator;
 import org.hibernate.id.UUIDHexGenerator;
 import org.hibernate.internal.FilterAliasGenerator;
 import org.hibernate.internal.StaticFilterAliasGenerator;
-import org.hibernate.internal.util.compare.EqualsHelper;
 import org.hibernate.mapping.PersistentClass;
 import org.hibernate.metadata.ClassMetadata;
+import org.hibernate.metamodel.model.domain.NavigableRole;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.persister.entity.MultiLoadOptions;
 import org.hibernate.persister.spi.PersisterCreationContext;
@@ -61,14 +62,16 @@ public class CustomPersister implements EntityPersister {
 	private static final IdentifierGenerator GENERATOR = new UUIDHexGenerator();
 
 	private SessionFactoryImplementor factory;
+	private EntityMetamodel entityMetamodel;
 
 	@SuppressWarnings("UnusedParameters")
 	public CustomPersister(
 			PersistentClass model,
-			EntityRegionAccessStrategy cacheAccessStrategy,
-			NaturalIdRegionAccessStrategy naturalIdRegionAccessStrategy,
+			EntityDataAccess cacheAccessStrategy,
+			NaturalIdDataAccess naturalIdRegionAccessStrategy,
 			PersisterCreationContext creationContext) {
 		this.factory = creationContext.getSessionFactory();
+		this.entityMetamodel = new EntityMetamodel( model, this, factory );
 	}
 
 	public boolean hasLazyProperties() {
@@ -81,6 +84,11 @@ public class CustomPersister implements EntityPersister {
 
 	public SessionFactoryImplementor getFactory() {
 		return factory;
+	}
+
+	@Override
+	public NavigableRole getNavigableRole() {
+		return new NavigableRole( getEntityName() );
 	}
 
 	@Override
@@ -131,22 +139,22 @@ public class CustomPersister implements EntityPersister {
 		return false;
 	}
 
-	public Boolean isTransient(Object object, SessionImplementor session) {
+	public Boolean isTransient(Object object, SharedSessionContractImplementor session) {
 		return ( (Custom) object ).id==null;
 	}
 
 	@Override
-	public Object[] getPropertyValuesToInsert(Object object, Map mergeMap, SessionImplementor session) {
+	public Object[] getPropertyValuesToInsert(Object object, Map mergeMap, SharedSessionContractImplementor session) {
 		return getPropertyValues( object );
 	}
 
-	public void processInsertGeneratedProperties(Serializable id, Object entity, Object[] state, SessionImplementor session) {
+	public void processInsertGeneratedProperties(Serializable id, Object entity, Object[] state, SharedSessionContractImplementor session) {
 	}
 
-	public void processUpdateGeneratedProperties(Serializable id, Object entity, Object[] state, SessionImplementor session) {
+	public void processUpdateGeneratedProperties(Serializable id, Object entity, Object[] state, SharedSessionContractImplementor session) {
 	}
 
-	public void retrieveGeneratedProperties(Serializable id, Object entity, Object[] state, SessionImplementor session) {
+	public void retrieveGeneratedProperties(Serializable id, Object entity, Object[] state, SharedSessionContractImplementor session) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -192,12 +200,12 @@ public class CustomPersister implements EntityPersister {
 	}
 
 	@Override
-	public Serializable getIdentifier(Object entity, SessionImplementor session) {
+	public Serializable getIdentifier(Object entity, SharedSessionContractImplementor session) {
 		return ( (Custom) entity ).id;
 	}
 
 	@Override
-	public void setIdentifier(Object entity, Serializable id, SessionImplementor session) {
+	public void setIdentifier(Object entity, Serializable id, SharedSessionContractImplementor session) {
 		( (Custom) entity ).id = (String) id;
 	}
 
@@ -207,7 +215,7 @@ public class CustomPersister implements EntityPersister {
 	}
 
 	@Override
-	public Object instantiate(Serializable id, SessionImplementor session) {
+	public Object instantiate(Serializable id, SharedSessionContractImplementor session) {
 		Custom c = new Custom();
 		c.id = (String) id;
 		return c;
@@ -224,7 +232,7 @@ public class CustomPersister implements EntityPersister {
 	}
 
 	@Override
-	public void resetIdentifier(Object entity, Serializable currentId, Object currentVersion, SessionImplementor session) {
+	public void resetIdentifier(Object entity, Serializable currentId, Object currentVersion, SharedSessionContractImplementor session) {
 		( ( Custom ) entity ).id = ( String ) currentId;
 	}
 
@@ -236,8 +244,8 @@ public class CustomPersister implements EntityPersister {
 		Object[] x,
 		Object[] y,
 		Object owner,
-		SessionImplementor session) throws HibernateException {
-		if ( !EqualsHelper.equals( x[0], y[0] ) ) {
+		SharedSessionContractImplementor session) throws HibernateException {
+		if ( !Objects.equals( x[0], y[0] ) ) {
 			return new int[] { 0 };
 		}
 		else {
@@ -249,8 +257,8 @@ public class CustomPersister implements EntityPersister {
 		Object[] x,
 		Object[] y,
 		Object owner,
-		SessionImplementor session) throws HibernateException {
-		if ( !EqualsHelper.equals( x[0], y[0] ) ) {
+		SharedSessionContractImplementor session) throws HibernateException {
+		if ( !Objects.equals( x[0], y[0] ) ) {
 			return new int[] { 0 };
 		}
 		else {
@@ -295,30 +303,30 @@ public class CustomPersister implements EntityPersister {
 	}
 
 	/**
-	 * @see EntityPersister#load(Serializable, Object, org.hibernate.LockOptions , SessionImplementor)
+	 * @see EntityPersister#load(Serializable, Object, org.hibernate.LockOptions , SharedSessionContractImplementor)
 	 */
 	public Object load(
 		Serializable id,
 		Object optionalObject,
 		LockOptions lockOptions,
-		SessionImplementor session
+		SharedSessionContractImplementor session
 	) throws HibernateException {
 		return load(id, optionalObject, lockOptions.getLockMode(), session);
 	}
 
 	@Override
-	public List multiLoad(Serializable[] ids, SessionImplementor session, MultiLoadOptions loadOptions) {
+	public List multiLoad(Serializable[] ids, SharedSessionContractImplementor session, MultiLoadOptions loadOptions) {
 		return Collections.emptyList();
 	}
 
 	/**
-	 * @see EntityPersister#load(Serializable, Object, LockMode, SessionImplementor)
+	 * @see EntityPersister#load(Serializable, Object, LockMode, SharedSessionContractImplementor)
 	 */
 	public Object load(
 		Serializable id,
 		Object optionalObject,
 		LockMode lockMode,
-		SessionImplementor session
+		SharedSessionContractImplementor session
 	) throws HibernateException {
 
 		// fails when optional object is supplied
@@ -348,34 +356,35 @@ public class CustomPersister implements EntityPersister {
 					session,
 					new PreLoadEvent( (EventSource) session )
 			);
+			TwoPhaseLoad.afterInitialize( clone, session );
 			TwoPhaseLoad.postLoad( clone, session, new PostLoadEvent( (EventSource) session ) );
 		}
 		return clone;
 	}
 
 	/**
-	 * @see EntityPersister#lock(Serializable, Object, Object, LockMode, SessionImplementor)
+	 * @see EntityPersister#lock(Serializable, Object, Object, LockMode, SharedSessionContractImplementor)
 	 */
 	public void lock(
 		Serializable id,
 		Object version,
 		Object object,
 		LockOptions lockOptions,
-		SessionImplementor session
+		SharedSessionContractImplementor session
 	) throws HibernateException {
 
 		throw new UnsupportedOperationException();
 	}
 
 	/**
-	 * @see EntityPersister#lock(Serializable, Object, Object, LockMode, SessionImplementor)
+	 * @see EntityPersister#lock(Serializable, Object, Object, LockMode, SharedSessionContractImplementor)
 	 */
 	public void lock(
 		Serializable id,
 		Object version,
 		Object object,
 		LockMode lockMode,
-		SessionImplementor session
+		SharedSessionContractImplementor session
 	) throws HibernateException {
 
 		throw new UnsupportedOperationException();
@@ -385,13 +394,13 @@ public class CustomPersister implements EntityPersister {
 		Serializable id,
 		Object[] fields,
 		Object object,
-		SessionImplementor session
+		SharedSessionContractImplementor session
 	) throws HibernateException {
 
 		INSTANCES.put(id, ( (Custom) object ).clone() );
 	}
 
-	public Serializable insert(Object[] fields, Object object, SessionImplementor session)
+	public Serializable insert(Object[] fields, Object object, SharedSessionContractImplementor session)
 	throws HibernateException {
 
 		throw new UnsupportedOperationException();
@@ -401,7 +410,7 @@ public class CustomPersister implements EntityPersister {
 		Serializable id,
 		Object version,
 		Object object,
-		SessionImplementor session
+		SharedSessionContractImplementor session
 	) throws HibernateException {
 
 		INSTANCES.remove(id);
@@ -419,7 +428,7 @@ public class CustomPersister implements EntityPersister {
 		Object oldVersion,
 		Object object,
 		Object rowId,
-		SessionImplementor session
+		SharedSessionContractImplementor session
 	) throws HibernateException {
 
 		INSTANCES.put( id, ( (Custom) object ).clone() );
@@ -470,15 +479,15 @@ public class CustomPersister implements EntityPersister {
 		return false;
 	}
 
-	public EntityRegionAccessStrategy getCacheAccessStrategy() {
+	public EntityDataAccess getCacheAccessStrategy() {
 		return null;
 	}
-	
+
 	public boolean hasNaturalIdCache() {
 		return false;
 	}
 
-	public NaturalIdRegionAccessStrategy getNaturalIdCacheAccessStrategy() {
+	public NaturalIdDataAccess getNaturalIdCacheAccessStrategy() {
 		return null;
 	}
 
@@ -537,21 +546,21 @@ public class CustomPersister implements EntityPersister {
 		throw new UnsupportedOperationException();
 	}
 
-	public Object createProxy(Serializable id, SessionImplementor session)
+	public Object createProxy(Serializable id, SharedSessionContractImplementor session)
 		throws HibernateException {
 		throw new UnsupportedOperationException("no proxy for this class");
 	}
 
 	public Object getCurrentVersion(
 		Serializable id,
-		SessionImplementor session)
+		SharedSessionContractImplementor session)
 		throws HibernateException {
 
 		return INSTANCES.get(id);
 	}
 
 	@Override
-	public Object forceVersionIncrement(Serializable id, Object currentVersion, SessionImplementor session)
+	public Object forceVersionIncrement(Serializable id, Object currentVersion, SharedSessionContractImplementor session)
 			throws HibernateException {
 		return null;
 	}
@@ -567,20 +576,20 @@ public class CustomPersister implements EntityPersister {
 	}
 
 	@Override
-	public void afterInitialize(Object entity, SessionImplementor session) {
+	public void afterInitialize(Object entity, SharedSessionContractImplementor session) {
 	}
 
 	@Override
-	public void afterReassociate(Object entity, SessionImplementor session) {
+	public void afterReassociate(Object entity, SharedSessionContractImplementor session) {
 	}
 
 	@Override
-	public Object[] getDatabaseSnapshot(Serializable id, SessionImplementor session) throws HibernateException {
+	public Object[] getDatabaseSnapshot(Serializable id, SharedSessionContractImplementor session) throws HibernateException {
 		return null;
 	}
 
 	@Override
-	public Serializable getIdByUniqueKey(Serializable key, String uniquePropertyName, SessionImplementor session) {
+	public Serializable getIdByUniqueKey(Serializable key, String uniquePropertyName, SharedSessionContractImplementor session) {
 		throw new UnsupportedOperationException( "not supported" );
 	}
 
@@ -596,7 +605,7 @@ public class CustomPersister implements EntityPersister {
 
 	@Override
 	public CacheEntry buildCacheEntry(
-			Object entity, Object[] state, Object version, SessionImplementor session) {
+			Object entity, Object[] state, Object version, SharedSessionContractImplementor session) {
 		return new StandardCacheEntryImpl(
 				state,
 				this,
@@ -652,29 +661,38 @@ public class CustomPersister implements EntityPersister {
 	}
 
 	@Override
+	public boolean canReadFromCache() {
+		return false;
+	}
+
+	@Override
+	public boolean canWriteToCache() {
+		return false;
+	}
+
+	@Override
 	public boolean isVersionPropertyGenerated() {
 		return false;
 	}
 
 	@Override
-	public Object[] getNaturalIdentifierSnapshot(Serializable id, SessionImplementor session) throws HibernateException {
+	public Object[] getNaturalIdentifierSnapshot(Serializable id, SharedSessionContractImplementor session) throws HibernateException {
 		return null;
 	}
 
 	@Override
 	public Serializable loadEntityIdByNaturalId(Object[] naturalIdValues, LockOptions lockOptions,
-			SessionImplementor session) {
+			SharedSessionContractImplementor session) {
 		return null;
 	}
 
-	@Override
 	public Comparator getVersionComparator() {
 		return null;
 	}
 
 	@Override
 	public EntityMetamodel getEntityMetamodel() {
-		return null;
+		return entityMetamodel;
 	}
 
 	@Override

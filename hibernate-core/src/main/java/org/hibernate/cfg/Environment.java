@@ -8,8 +8,6 @@ package org.hibernate.cfg;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.sql.Timestamp;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
@@ -18,6 +16,7 @@ import org.hibernate.Version;
 import org.hibernate.bytecode.spi.BytecodeProvider;
 import org.hibernate.engine.jdbc.connections.internal.ConnectionProviderInitiator;
 import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.internal.log.UnsupportedLogger;
 import org.hibernate.internal.util.ConfigHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 
@@ -151,37 +150,24 @@ import org.jboss.logging.Logger;
  * @author Gavin King
  */
 public final class Environment implements AvailableSettings {
-	private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, Environment.class.getName());
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger( CoreMessageLogger.class, Environment.class.getName());
 
 	private static final BytecodeProvider BYTECODE_PROVIDER_INSTANCE;
 	private static final boolean ENABLE_BINARY_STREAMS;
 	private static final boolean ENABLE_REFLECTION_OPTIMIZER;
-	private static final boolean JVM_HAS_TIMESTAMP_BUG;
+	private static final boolean ENABLE_LEGACY_PROXY_CLASSNAMES;
 
 	private static final Properties GLOBAL_PROPERTIES;
 
-	private static final Map OBSOLETE_PROPERTIES = new HashMap();
-	private static final Map RENAMED_PROPERTIES = new HashMap();
-
 	/**
-	 * Issues warnings to the user when any obsolete or renamed property names are used.
+	 * No longer effective.
 	 *
 	 * @param configurationValues The specified properties.
+	 * @deprecated without replacement. Such verification is best done ad hoc, case by case.
 	 */
+	@Deprecated
 	public static void verifyProperties(Map<?,?> configurationValues) {
-		final Map propertiesToAdd = new HashMap();
-		for ( Map.Entry entry : configurationValues.entrySet() ) {
-			final Object replacementKey = OBSOLETE_PROPERTIES.get( entry.getKey() );
-			if ( replacementKey != null ) {
-				LOG.unsupportedProperty( entry.getKey(), replacementKey );
-			}
-			final Object renamedKey = RENAMED_PROPERTIES.get( entry.getKey() );
-			if ( renamedKey != null ) {
-				LOG.renamedProperty( entry.getKey(), renamedKey );
-				propertiesToAdd.put( renamedKey, entry.getValue() );
-			}
-		}
-		configurationValues.putAll( propertiesToAdd );
+		//Obsolete and Renamed properties are no longer handled here
 	}
 
 	static {
@@ -214,17 +200,16 @@ public final class Environment implements AvailableSettings {
 		}
 
 		try {
-		    Properties systemProperties = System.getProperties();
+			Properties systemProperties = System.getProperties();
 		    // Must be thread-safe in case an application changes System properties during Hibernate initialization.
 		    // See HHH-8383.
-		    synchronized (systemProperties) {
-		    	GLOBAL_PROPERTIES.putAll(systemProperties);
-		    }
-		} catch (SecurityException se) {
-		    LOG.unableToCopySystemProperties();
+			synchronized (systemProperties) {
+				GLOBAL_PROPERTIES.putAll(systemProperties);
+			}
 		}
-
-		verifyProperties(GLOBAL_PROPERTIES);
+		catch (SecurityException se) {
+			LOG.unableToCopySystemProperties();
+		}
 
 		ENABLE_BINARY_STREAMS = ConfigurationHelper.getBoolean(USE_STREAMS_FOR_BINARY, GLOBAL_PROPERTIES);
 		if ( ENABLE_BINARY_STREAMS ) {
@@ -236,30 +221,24 @@ public final class Environment implements AvailableSettings {
 			LOG.usingReflectionOptimizer();
 		}
 
-		BYTECODE_PROVIDER_INSTANCE = buildBytecodeProvider( GLOBAL_PROPERTIES );
-
-		long x = 123456789;
-		JVM_HAS_TIMESTAMP_BUG = new Timestamp(x).getTime() != x;
-		if ( JVM_HAS_TIMESTAMP_BUG ) {
-			LOG.usingTimestampWorkaround();
+		ENABLE_LEGACY_PROXY_CLASSNAMES = ConfigurationHelper.getBoolean( ENFORCE_LEGACY_PROXY_CLASSNAMES, GLOBAL_PROPERTIES );
+		if ( ENABLE_LEGACY_PROXY_CLASSNAMES ) {
+			final UnsupportedLogger unsupportedLogger = Logger.getMessageLogger( UnsupportedLogger.class, Environment.class.getName() );
+			unsupportedLogger.usingLegacyClassnamesForProxies();
 		}
-	}
 
-	public static BytecodeProvider getBytecodeProvider() {
-		return BYTECODE_PROVIDER_INSTANCE;
+		BYTECODE_PROVIDER_INSTANCE = buildBytecodeProvider( GLOBAL_PROPERTIES );
 	}
 
 	/**
-	 * Does this JVM's implementation of {@link java.sql.Timestamp} have a bug in which the following is true:<code>
-	 * new java.sql.Timestamp( x ).getTime() != x
-	 * </code>
-	 * <p/>
-	 * NOTE : IBM JDK 1.3.1 the only known JVM to exhibit this behavior.
-	 *
-	 * @return True if the JVM's {@link Timestamp} implementa
+	 * This will be removed soon; currently just returns false as no known JVM exibits this bug
+	 * and is also able to run this version of Hibernate ORM.
+	 * @deprecated removed as unneccessary
+	 * @return false
 	 */
+	@Deprecated
 	public static boolean jvmHasTimestampBug() {
-		return JVM_HAS_TIMESTAMP_BUG;
+		return false;
 	}
 
 	/**
@@ -268,7 +247,14 @@ public final class Environment implements AvailableSettings {
 	 * @return True if streams should be used for binary data handling; false otherwise.
 	 *
 	 * @see #USE_STREAMS_FOR_BINARY
+	 *
+	 * @deprecated Deprecated to indicate that the method will be moved to
+	 * {@link org.hibernate.boot.spi.SessionFactoryOptions} /
+	 * {@link org.hibernate.boot.SessionFactoryBuilder} - probably in 6.0.
+	 * See <a href="https://hibernate.atlassian.net/browse/HHH-12194">HHH-12194</a> and
+	 * <a href="https://hibernate.atlassian.net/browse/HHH-12193">HHH-12193</a> for details
 	 */
+	@Deprecated
 	public static boolean useStreamsForBinary() {
 		return ENABLE_BINARY_STREAMS;
 	}
@@ -281,9 +267,37 @@ public final class Environment implements AvailableSettings {
 	 * @see #USE_REFLECTION_OPTIMIZER
 	 * @see #getBytecodeProvider()
 	 * @see BytecodeProvider#getReflectionOptimizer
+	 *
+	 * @deprecated Deprecated to indicate that the method will be moved to
+	 * {@link org.hibernate.boot.spi.SessionFactoryOptions} /
+	 * {@link org.hibernate.boot.SessionFactoryBuilder} - probably in 6.0.
+	 * See <a href="https://hibernate.atlassian.net/browse/HHH-12194">HHH-12194</a> and
+	 * <a href="https://hibernate.atlassian.net/browse/HHH-12193">HHH-12193</a> for details
 	 */
+	@Deprecated
 	public static boolean useReflectionOptimizer() {
 		return ENABLE_REFLECTION_OPTIMIZER;
+	}
+
+	/**
+	 * @deprecated Deprecated to indicate that the method will be moved to
+	 * {@link org.hibernate.boot.spi.SessionFactoryOptions} /
+	 * {@link org.hibernate.boot.SessionFactoryBuilder} - probably in 6.0.
+	 * See <a href="https://hibernate.atlassian.net/browse/HHH-12194">HHH-12194</a> and
+	 * <a href="https://hibernate.atlassian.net/browse/HHH-12193">HHH-12193</a> for details
+	 */
+	@Deprecated
+	public static BytecodeProvider getBytecodeProvider() {
+		return BYTECODE_PROVIDER_INSTANCE;
+	}
+
+	/**
+	 * @return True if global option org.hibernate.cfg.AvailableSettings#ENFORCE_LEGACY_PROXY_CLASSNAMES was enabled
+	 * @deprecated This option will be removed soon and should not be relied on.
+	 */
+	@Deprecated
+	public static boolean useLegacyProxyClassnames() {
+		return ENABLE_LEGACY_PROXY_CLASSNAMES;
 	}
 
 	/**
@@ -312,18 +326,35 @@ public final class Environment implements AvailableSettings {
 		return ConnectionProviderInitiator.toIsolationNiceName( isolation );
 	}
 
+
+	public static final String BYTECODE_PROVIDER_NAME_JAVASSIST = "javassist";
+	public static final String BYTECODE_PROVIDER_NAME_BYTEBUDDY = "bytebuddy";
+	public static final String BYTECODE_PROVIDER_NAME_NONE = "none";
+	public static final String BYTECODE_PROVIDER_NAME_DEFAULT = BYTECODE_PROVIDER_NAME_BYTEBUDDY;
+
 	public static BytecodeProvider buildBytecodeProvider(Properties properties) {
-		String provider = ConfigurationHelper.getString( BYTECODE_PROVIDER, properties, "javassist" );
-		LOG.bytecodeProvider( provider );
+		String provider = ConfigurationHelper.getString( BYTECODE_PROVIDER, properties, BYTECODE_PROVIDER_NAME_DEFAULT );
 		return buildBytecodeProvider( provider );
 	}
 
 	private static BytecodeProvider buildBytecodeProvider(String providerName) {
-		if ( "javassist".equals( providerName ) ) {
+		if ( BYTECODE_PROVIDER_NAME_NONE.equals( providerName ) ) {
+			return new org.hibernate.bytecode.internal.none.BytecodeProviderImpl();
+		}
+		if ( BYTECODE_PROVIDER_NAME_BYTEBUDDY.equals( providerName ) ) {
+			return new org.hibernate.bytecode.internal.bytebuddy.BytecodeProviderImpl();
+		}
+
+		if ( BYTECODE_PROVIDER_NAME_JAVASSIST.equals( providerName ) ) {
 			return new org.hibernate.bytecode.internal.javassist.BytecodeProviderImpl();
 		}
 
-		LOG.unknownBytecodeProvider( providerName );
-		return new org.hibernate.bytecode.internal.javassist.BytecodeProviderImpl();
+		LOG.bytecodeProvider( providerName );
+
+		// todo : allow a custom class name - just check if the config is a FQN
+		//		currently we assume it is only ever the Strings "javassist" or "bytebuddy"...
+
+		LOG.unknownBytecodeProvider( providerName, BYTECODE_PROVIDER_NAME_DEFAULT );
+		return new org.hibernate.bytecode.internal.bytebuddy.BytecodeProviderImpl();
 	}
 }

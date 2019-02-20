@@ -6,6 +6,7 @@
  */
 package org.hibernate.testing.junit4;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -13,6 +14,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.function.Consumer;
 import javax.persistence.SharedCacheMode;
 
 import org.hibernate.HibernateException;
@@ -31,12 +33,12 @@ import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.H2Dialect;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.internal.build.AllowSysOut;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.jdbc.AbstractReturningWork;
 import org.hibernate.jdbc.Work;
-import org.hibernate.resource.transaction.TransactionCoordinator;
-import org.hibernate.resource.transaction.spi.TransactionStatus;
+import org.hibernate.resource.transaction.spi.TransactionCoordinator;
 
 import org.hibernate.testing.AfterClassOnce;
 import org.hibernate.testing.BeforeClassOnce;
@@ -44,9 +46,11 @@ import org.hibernate.testing.OnExpectedFailure;
 import org.hibernate.testing.OnFailure;
 import org.hibernate.testing.SkipLog;
 import org.hibernate.testing.cache.CachingRegionFactory;
+import org.hibernate.testing.transaction.TransactionUtil2;
 import org.junit.After;
 import org.junit.Before;
 
+import static org.hibernate.testing.transaction.TransactionUtil.doInHibernate;
 import static org.junit.Assert.fail;
 
 /**
@@ -98,8 +102,15 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 	@BeforeClassOnce
 	@SuppressWarnings( {"UnusedDeclaration"})
 	protected void buildSessionFactory() {
+		buildSessionFactory( null );
+	}
+
+	protected void buildSessionFactory(Consumer<Configuration> configurationAdapter) {
 		// for now, build the configuration to get all the property settings
 		configuration = constructAndConfigureConfiguration();
+		if ( configurationAdapter != null ) {
+			configurationAdapter.accept(configuration);
+		}
 		BootstrapServiceRegistry bootRegistry = buildBootstrapServiceRegistry();
 		serviceRegistry = buildServiceRegistry( bootRegistry, configuration );
 		// this is done here because Configuration does not currently support 4.0 xsd
@@ -109,6 +120,10 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 	}
 
 	protected void rebuildSessionFactory() {
+		rebuildSessionFactory( null );
+	}
+
+	protected void rebuildSessionFactory(Consumer<Configuration> configurationAdapter) {
 		if ( sessionFactory == null ) {
 			return;
 		}
@@ -122,7 +137,7 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 		catch (Exception ignore) {
 		}
 
-		buildSessionFactory();
+		buildSessionFactory( configurationAdapter );
 	}
 
 	protected Configuration buildConfiguration() {
@@ -190,8 +205,12 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 		String[] xmlFiles = getXmlFiles();
 		if ( xmlFiles != null ) {
 			for ( String xmlFile : xmlFiles ) {
-				InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream( xmlFile );
-				configuration.addInputStream( is );
+				try ( InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream( xmlFile ) ) {
+					configuration.addInputStream( is );
+				}
+				catch (IOException e) {
+					throw new IllegalArgumentException( e );
+				}
 			}
 		}
 	}
@@ -237,6 +256,7 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 
 	protected BootstrapServiceRegistry buildBootstrapServiceRegistry() {
 		final BootstrapServiceRegistryBuilder builder = new BootstrapServiceRegistryBuilder();
+		builder.applyClassLoader( getClass().getClassLoader() );
 		prepareBootstrapRegistryBuilder( builder );
 		return builder.build();
 	}
@@ -247,7 +267,6 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 	protected StandardServiceRegistryImpl buildServiceRegistry(BootstrapServiceRegistry bootRegistry, Configuration configuration) {
 		Properties properties = new Properties();
 		properties.putAll( configuration.getProperties() );
-		Environment.verifyProperties( properties );
 		ConfigurationHelper.resolvePlaceHolders( properties );
 
 		StandardServiceRegistryBuilder cfgRegistryBuilder = configuration.getStandardServiceRegistryBuilder();
@@ -373,20 +392,22 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 		return false;
 	}
 
+	protected boolean isCleanupTestDataUsingBulkDelete() {
+		return false;
+	}
+
 	protected void cleanupTestData() throws Exception {
-		Session s = openSession();
-		Transaction transaction = s.beginTransaction();
-		try {
-			s.createQuery( "delete from java.lang.Object" ).executeUpdate();
-			transaction.commit();
+		if(isCleanupTestDataUsingBulkDelete()) {
+			doInHibernate( this::sessionFactory, s -> {
+				s.createQuery( "delete from java.lang.Object" ).executeUpdate();
+			} );
 		}
-		catch (Exception e) {
-			if ( transaction.getStatus().canRollback() ) {
-				transaction.rollback();
-			}
-		}
-		finally {
-			s.close();
+		else {
+			// Because of https://hibernate.atlassian.net/browse/HHH-5529,
+			// we can'trely on a Bulk Delete query which will not clear the link tables in @ElementCollection or unidirectional collections
+			doInHibernate( this::sessionFactory, s -> {
+				s.createQuery( "from java.lang.Object" ).list().forEach( s::remove );
+			} );
 		}
 	}
 
@@ -407,6 +428,7 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 	}
 
 	@SuppressWarnings( {"UnnecessaryBoxing", "UnnecessaryUnboxing"})
+	@AllowSysOut
 	protected void assertAllDataRemoved() {
 		if ( !createSchema() ) {
 			return; // no tables were created...
@@ -482,5 +504,17 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 		else {
 			return true;
 		}
+	}
+
+	protected void inTransaction(Consumer<SessionImplementor> action) {
+		TransactionUtil2.inTransaction( sessionFactory(), action );
+	}
+
+	protected void inTransaction(SessionImplementor session, Consumer<SessionImplementor> action) {
+		TransactionUtil2.inTransaction( session, action );
+	}
+
+	protected void inSession(Consumer<SessionImplementor> action) {
+		TransactionUtil2.inSession( sessionFactory(), action );
 	}
 }

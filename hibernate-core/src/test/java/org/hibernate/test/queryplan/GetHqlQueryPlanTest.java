@@ -6,19 +6,25 @@
  */
 package org.hibernate.test.queryplan;
 
+import java.util.Arrays;
 import java.util.Map;
 
 import org.hibernate.Session;
 import org.hibernate.engine.query.spi.HQLQueryPlan;
 import org.hibernate.engine.query.spi.QueryPlanCache;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
 
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.query.internal.ParameterMetadataImpl;
+import org.hibernate.query.internal.QueryParameterBindingsImpl;
+import org.hibernate.query.spi.QueryParameterBindings;
+import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 import org.junit.Test;
 
-import static org.junit.Assert.assertNotSame;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.hibernate.testing.transaction.TransactionUtil.doInHibernate;
+import static org.junit.Assert.*;
 
 /**
  * Tests for HQL query plans
@@ -46,7 +52,7 @@ public class GetHqlQueryPlanTest extends BaseCoreFunctionalTestCase {
 		HQLQueryPlan plan1 = cache.getHQLQueryPlan( "from Person", false, getEnabledFilters( s ) );
 		HQLQueryPlan plan2 = cache.getHQLQueryPlan( "from Person where name is null", false, getEnabledFilters( s ) );
 		HQLQueryPlan plan3 = cache.getHQLQueryPlan( "from Person where name = :name", false, getEnabledFilters( s ) );
-		HQLQueryPlan plan4 = cache.getHQLQueryPlan( "from Person where name = ?", false, getEnabledFilters( s ) );
+		HQLQueryPlan plan4 = cache.getHQLQueryPlan( "from Person where name = ?1", false, getEnabledFilters( s ) );
 
 		assertNotSame( plan1, plan2 );
 		assertNotSame( plan1, plan3 );
@@ -58,9 +64,43 @@ public class GetHqlQueryPlanTest extends BaseCoreFunctionalTestCase {
 		assertSame( plan1, cache.getHQLQueryPlan( "from Person", false, getEnabledFilters( s ) ) );
 		assertSame( plan2, cache.getHQLQueryPlan( "from Person where name is null", false, getEnabledFilters( s ) ) );
 		assertSame( plan3, cache.getHQLQueryPlan( "from Person where name = :name", false, getEnabledFilters( s ) ) );
-		assertSame( plan4, cache.getHQLQueryPlan( "from Person where name = ?", false, getEnabledFilters( s ) ) );
+		assertSame( plan4, cache.getHQLQueryPlan( "from Person where name = ?1", false, getEnabledFilters( s ) ) );
 
 		s.close();
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-12413")
+	public void testExpandingQueryStringMultipleTimesWorks() {
+		doInHibernate( this::sessionFactory, session -> {
+			QueryPlanCache cache = ( ( SessionImplementor ) session ).getFactory().getQueryPlanCache();
+
+			String queryString = "from Person where name in :names";
+			HQLQueryPlan plan = cache.getHQLQueryPlan( queryString, false, getEnabledFilters( session ) );
+
+			QueryParameterBindings queryParameterBindings = QueryParameterBindingsImpl.from(
+					plan.getParameterMetadata(),
+					(SessionFactoryImplementor) session.getSessionFactory(),
+					false
+			);
+
+			queryParameterBindings.getQueryParameterListBinding( "names" ).setBindValues( Arrays.asList( "a", "b" ) );
+			String actualQueryString = queryParameterBindings.expandListValuedParameters(queryString, (SharedSessionContractImplementor) session);
+			String expectedQueryString = "from Person where name in (:names_0, :names_1)";
+
+			assertEquals(
+					expectedQueryString,
+					actualQueryString
+			);
+
+			// Expanding the same query again should work as before
+			actualQueryString = queryParameterBindings.expandListValuedParameters(queryString, (SharedSessionContractImplementor) session);
+
+			assertEquals(
+					expectedQueryString,
+					actualQueryString
+			);
+		} );
 	}
 
 	@Test

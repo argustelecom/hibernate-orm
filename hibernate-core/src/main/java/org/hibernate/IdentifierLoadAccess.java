@@ -7,6 +7,10 @@
 package org.hibernate;
 
 import java.io.Serializable;
+import java.util.Optional;
+
+import org.hibernate.graph.GraphSemantic;
+import org.hibernate.graph.RootGraph;
 
 /**
  * Loads an entity by its primary identifier.
@@ -33,6 +37,12 @@ public interface IdentifierLoadAccess<T> {
 	 */
 	IdentifierLoadAccess<T> with(CacheMode cacheMode);
 
+	default IdentifierLoadAccess<T> with(RootGraph<T> graph) {
+		return with( graph, GraphSemantic.LOAD );
+	}
+
+	IdentifierLoadAccess<T> with(RootGraph<T> graph, GraphSemantic semantic);
+
 	/**
 	 * Return the persistent instance with the given identifier, assuming that the instance exists. This method
 	 * might return a proxied instance that is initialized on-demand, when a non-identifier method is accessed.
@@ -57,4 +67,14 @@ public interface IdentifierLoadAccess<T> {
 	 * @return The persistent instance or {@code null}
 	 */
 	T load(Serializable id);
+
+	/**
+	 * Same semantic as {@link #load} except that here {@link Optional} is returned to
+	 * handle nullability.
+	 *
+	 * @param id The identifier
+	 *
+	 * @return The persistent instance, if one, wrapped in Optional
+	 */
+	Optional<T> loadOptional(Serializable id);
 }

@@ -81,13 +81,24 @@ public abstract class CriteriaTools {
 		final SessionFactoryImplementor sessionFactory = versionsReader.getSessionImplementor().getFactory();
 
 		if ( AuditId.IDENTIFIER_PLACEHOLDER.equals( propertyName ) ) {
-			final String identifierPropertyName = sessionFactory.getEntityPersister( entityName ).getIdentifierPropertyName();
+			final String identifierPropertyName = sessionFactory.getMetamodel().entityPersister( entityName ).getIdentifierPropertyName();
 			propertyName = enversService.getAuditEntitiesConfiguration().getOriginalIdPropName() + "." + identifierPropertyName;
 		}
 		else {
 			final List<String> identifierPropertyNames = identifierPropertyNames( sessionFactory, entityName );
 			if ( identifierPropertyNames.contains( propertyName ) ) {
 				propertyName = enversService.getAuditEntitiesConfiguration().getOriginalIdPropName() + "." + propertyName;
+			}
+			else if ( propertyName != null ) {
+				// if property starts with an identifier prefix ( e.g. embedded ids ), substitute with the originalId property
+				// because Envers performs replacement this automatically during the mapping.
+				for ( String identifierPropertyName : identifierPropertyNames ) {
+					if ( propertyName.startsWith( identifierPropertyName + "." ) ) {
+						propertyName = enversService.getAuditEntitiesConfiguration().getOriginalIdPropName() +
+								propertyName.substring( identifierPropertyName.length() );
+						break;
+					}
+				}
 			}
 		}
 
@@ -101,12 +112,12 @@ public abstract class CriteriaTools {
 	 * @return List of property names representing entity identifier.
 	 */
 	private static List<String> identifierPropertyNames(SessionFactoryImplementor sessionFactory, String entityName) {
-		final String identifierPropertyName = sessionFactory.getEntityPersister( entityName ).getIdentifierPropertyName();
+		final String identifierPropertyName = sessionFactory.getMetamodel().entityPersister( entityName ).getIdentifierPropertyName();
 		if ( identifierPropertyName != null ) {
 			// Single id.
 			return Arrays.asList( identifierPropertyName );
 		}
-		final Type identifierType = sessionFactory.getEntityPersister( entityName ).getIdentifierType();
+		final Type identifierType = sessionFactory.getMetamodel().entityPersister( entityName ).getIdentifierType();
 		if ( identifierType instanceof EmbeddedComponentType ) {
 			// Multiple ids.
 			final EmbeddedComponentType embeddedComponentType = (EmbeddedComponentType) identifierType;

@@ -13,7 +13,6 @@ import java.io.StringWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
-import javax.annotation.Generated;
 import javax.annotation.processing.FilerException;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
@@ -111,7 +110,11 @@ public final class ClassWriter {
 
 			List<MetaAttribute> members = entity.getMembers();
 			for ( MetaAttribute metaMember : members ) {
-				pw.println( "	" + metaMember.getDeclarationString() );
+				pw.println( "	" + metaMember.getAttributeDeclarationString() );
+			}
+			pw.println();
+			for ( MetaAttribute metaMember : members ) {
+				pw.println( "	" + metaMember.getAttributeNameDeclarationString() );
 			}
 
 			pw.println();
@@ -195,7 +198,7 @@ public final class ClassWriter {
 	private static String writeGeneratedAnnotation(MetaEntity entity, Context context) {
 		StringBuilder generatedAnnotation = new StringBuilder();
 		generatedAnnotation.append( "@" )
-				.append( entity.importType( Generated.class.getName() ) )
+				.append( entity.importType( context.getGeneratedAnnotation().getQualifiedName().toString() ) )
 				.append( "(value = \"" )
 				.append( JPAMetaModelEntityProcessor.class.getName() );
 		if ( context.addGeneratedDate() ) {
@@ -210,7 +213,7 @@ public final class ClassWriter {
 	}
 
 	private static String writeSuppressWarnings() {
-		return "@SuppressWarnings(\"all\")";
+		return "@SuppressWarnings({ \"deprecation\", \"rawtypes\" })";
 	}
 
 	private static String writeStaticMetaModelAnnotation(MetaEntity entity) {

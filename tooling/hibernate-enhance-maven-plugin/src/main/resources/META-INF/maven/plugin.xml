@@ -24,15 +24,21 @@
       <aggregator>false</aggregator>
       <requiresOnline>false</requiresOnline>
       <inheritedByDefault>true</inheritedByDefault>
+      <requiresDependencyResolution>compile+runtime</requiresDependencyResolution>
       <phase>compile</phase>
-      <executePhase>compile</executePhase>
-      <executeGoal>enhance</executeGoal>
       <implementation>org.hibernate.orm.tooling.maven.MavenEnhancePlugin</implementation>
       <language>java</language>
       <instantiationStrategy>per-lookup</instantiationStrategy>
       <executionStrategy>once-per-session</executionStrategy>
       <threadSafe>false</threadSafe>
       <parameters>
+        <parameter>
+          <name>base</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The root folder for .class files</description>
+        </parameter>
         <parameter>
           <name>dir</name>
           <type>java.lang.String</type>
@@ -69,7 +75,7 @@
           <description>Enable enhancement for management of bi-direction associations</description>
         </parameter>
         <parameter>
-          <name>enableFieldAccessEnhancement</name>
+          <name>enableExtendedEnhancement</name>
           <type>java.lang.Boolean</type>
           <required>false</required>
           <editable>true</editable>
@@ -77,6 +83,7 @@
         </parameter>
       </parameters>
       <configuration>
+        <base>${project.build.outputDirectory}</base>
         <dir>${project.build.outputDirectory}</dir>
         <failOnError>true</failOnError>
         <enableLazyInitialization>false</enableLazyInitialization>
@@ -84,6 +91,12 @@
         <enableAssociationManagement>false</enableAssociationManagement>
         <enableExtendedEnhancement>false</enableExtendedEnhancement>
       </configuration>
+      <requirements>
+        <requirement>
+          <role>org.sonatype.plexus.build.incremental.BuildContext</role>
+          <field-name>buildContext</field-name>
+        </requirement>
+      </requirements>
     </mojo>
   </mojos>
   <dependencies>
@@ -95,6 +108,12 @@
       <artifactId>plexus-utils</artifactId>
       <type>jar</type>
       <version>3.0.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.codehaus.plexus</groupId>
+      <artifactId>plexus-build-api</artifactId>
+      <type>jar</type>
+      <version>0.0.7</version>
     </dependency>
     <dependency>
       <groupId>org.apache.maven.plugin-tools</groupId>

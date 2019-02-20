@@ -21,10 +21,17 @@ import org.hibernate.dialect.pagination.LimitHelper;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelperBuilder;
 import org.hibernate.engine.spi.RowSelection;
+import org.hibernate.hql.spi.id.IdTableSupportStandardImpl;
+import org.hibernate.hql.spi.id.MultiTableBulkIdStrategy;
+import org.hibernate.hql.spi.id.local.AfterUseAction;
+import org.hibernate.hql.spi.id.local.LocalTemporaryTableBulkIdStrategy;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.sql.CaseFragment;
 import org.hibernate.sql.DerbyCaseFragment;
+import org.hibernate.tool.schema.extract.internal.SequenceInformationExtractorDerbyDatabaseImpl;
+import org.hibernate.tool.schema.extract.internal.SequenceInformationExtractorNoOpImpl;
+import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
 
 import org.jboss.logging.Logger;
 
@@ -126,10 +133,20 @@ public class DerbyDialect extends DB2Dialect {
 	@Override
 	public String getQuerySequencesString() {
 		if ( supportsSequences() ) {
-			return "select SEQUENCENAME from SYS.SYSSEQUENCES";
+			return "select sys.sysschemas.schemaname as sequence_schema, sys.syssequences.* from sys.syssequences left join sys.sysschemas on sys.syssequences.schemaid = sys.sysschemas.schemaid";
 		}
 		else {
-			throw new MappingException( "Derby does not support sequence prior to release 10.6.1.0" );
+			return null;
+		}
+	}
+
+	@Override
+	public SequenceInformationExtractor getSequenceInformationExtractor() {
+		if ( getQuerySequencesString() == null ) {
+			return SequenceInformationExtractorNoOpImpl.INSTANCE;
+		}
+		else {
+			return SequenceInformationExtractorDerbyDatabaseImpl.INSTANCE;
 		}
 	}
 
@@ -557,5 +574,38 @@ public class DerbyDialect extends DB2Dialect {
 		registerKeyword( "XMLPARSE" );
 		registerKeyword( "XMLSERIALIZE" );
 		registerKeyword( "YEAR" );
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * <p>
+	 * From Derby docs:
+	 * <pre>
+	 *     The DECLARE GLOBAL TEMPORARY TABLE statement defines a temporary table for the current connection.
+	 * </pre>
+	 *
+	 * {@link DB2Dialect} returns a {@link org.hibernate.hql.spi.id.global.GlobalTemporaryTableBulkIdStrategy} that
+	 * will make temporary tables created at startup and hence unavailable for subsequent connections.<br/>
+	 * see HHH-10238.
+	 * </p>
+     */
+	@Override
+	public MultiTableBulkIdStrategy getDefaultMultiTableBulkIdStrategy() {
+		return new LocalTemporaryTableBulkIdStrategy(new IdTableSupportStandardImpl() {
+			@Override
+			public String generateIdTableName(String baseName) {
+				return "session." + super.generateIdTableName( baseName );
+			}
+
+			@Override
+			public String getCreateIdTableCommand() {
+				return "declare global temporary table";
+			}
+
+			@Override
+			public String getCreateIdTableStatementOptions() {
+				return "not logged";
+			}
+		}, AfterUseAction.CLEAN, null);
 	}
 }

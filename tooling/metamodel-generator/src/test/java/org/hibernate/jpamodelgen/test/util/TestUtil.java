@@ -18,10 +18,11 @@ import java.lang.reflect.Type;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.List;
+import javax.persistence.metamodel.ListAttribute;
+import javax.persistence.metamodel.SetAttribute;
 import javax.tools.Diagnostic;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.jboss.logging.Logger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -33,7 +34,9 @@ import static org.junit.Assert.fail;
  * @author Hardy Ferentschik
  */
 public class TestUtil {
-	private static final Logger log = LoggerFactory.getLogger( TestUtil.class );
+
+	private static final Logger log = Logger.getLogger( TestUtil.class );
+
 	private static final String PATH_SEPARATOR = File.separator;
 	public static final String RESOURCE_SEPARATOR = "/";
 	private static final String PACKAGE_SEPARATOR = ".";
@@ -97,6 +100,26 @@ public class TestUtil {
 				expectedType,
 				actualType
 		);
+	}
+
+	public static void assertAttributeTypeInMetaModelFor(Class<?> clazz, String fieldName, Type expectedType, String errorString) {
+		Field field = getFieldFromMetamodelFor( clazz, fieldName );
+		assertNotNull( "Cannot find field '" + fieldName + "' in " + clazz.getName(), field );
+		ParameterizedType type = (ParameterizedType) field.getGenericType();
+		Type actualType = type.getActualTypeArguments()[1];
+		assertEquals(
+				"Types do not match: " + buildErrorString( errorString, clazz ),
+				expectedType,
+				actualType
+		);
+	}
+
+	public static void assertSetAttributeTypeInMetaModelFor(Class<?> clazz, String fieldName, Class<?> expectedType, String errorString) {
+		assertCollectionAttributeTypeInMetaModelFor( clazz, fieldName, SetAttribute.class, expectedType, errorString );
+	}
+
+	public static void assertListAttributeTypeInMetaModelFor(Class<?> clazz, String fieldName, Class<?> expectedType, String errorString) {
+		assertCollectionAttributeTypeInMetaModelFor( clazz, fieldName, ListAttribute.class, expectedType, errorString );
 	}
 
 	public static void assertMapAttributesInMetaModelFor(Class<?> clazz, String fieldName, Class<?> expectedMapKey, Class<?> expectedMapValue, String errorString) {
@@ -201,7 +224,7 @@ public class TestUtil {
 						*/
 				while ( ( line = input.readLine() ) != null ) {
 					contents.append( line );
-					contents.append( System.getProperty( "line.separator" ) );
+					contents.append( System.lineSeparator() );
 				}
 			}
 			finally {
@@ -316,6 +339,33 @@ public class TestUtil {
 		}
 		return targetDir;
 	}
+
+	private static void assertCollectionAttributeTypeInMetaModelFor(
+			Class<?> clazz,
+			String fieldName,
+			Class<?> collectionType,
+			Class<?> expectedType,
+			String errorString) {
+		Field field = getFieldFromMetamodelFor( clazz, fieldName );
+		assertNotNull( "Cannot find field '" + fieldName + "' in " + clazz.getName(), field );
+		ParameterizedType type = (ParameterizedType) field.getGenericType();
+		Type rawType = type.getRawType();
+
+		assertEquals(
+				"Types do not match: " + buildErrorString( errorString, clazz ),
+				collectionType,
+				rawType
+		);
+
+		Type genericType = type.getActualTypeArguments()[1];
+
+		assertEquals(
+				"Types do not match: " + buildErrorString( errorString, clazz ),
+				expectedType,
+				genericType
+		);
+	}
+
 }
 
 

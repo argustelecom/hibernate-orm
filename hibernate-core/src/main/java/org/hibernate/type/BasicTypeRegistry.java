@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.hibernate.HibernateException;
 import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.type.spi.TypeConfiguration;
 import org.hibernate.usertype.CompositeUserType;
 import org.hibernate.usertype.UserType;
 
@@ -25,8 +26,14 @@ public class BasicTypeRegistry implements Serializable {
 	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( BasicTypeRegistry.class );
 
 	// TODO : analyze these sizing params; unfortunately this seems to be the only way to give a "concurrencyLevel"
-	private Map<String, BasicType> registry = new ConcurrentHashMap<String, BasicType>( 100, .75f, 1 );
+	private Map<String, BasicType> registry = new ConcurrentHashMap<>( 100, .75f, 1 );
 	private boolean locked;
+	private TypeConfiguration typeConfiguration;
+
+	public BasicTypeRegistry(TypeConfiguration typeConfiguration){
+		this();
+		this.typeConfiguration = typeConfiguration;
+	}
 
 	public BasicTypeRegistry() {
 		register( BooleanType.INSTANCE );
@@ -74,6 +81,7 @@ public class BasicTypeRegistry implements Serializable {
 
 		register( BinaryType.INSTANCE );
 		register( WrapperBinaryType.INSTANCE );
+		register( RowVersionType.INSTANCE );
 		register( ImageType.INSTANCE );
 		register( CharArrayType.INSTANCE );
 		register( CharacterArrayType.INSTANCE );
@@ -141,6 +149,10 @@ public class BasicTypeRegistry implements Serializable {
 			if ( key == null ) {
 				continue;
 			}
+			//Use String#intern here as there's high chances of duplicates combined with long term usage:
+			//just running our testsuite would generate 210,000 instances for the String "java.lang.Class" alone.
+			//Incidentally this might help with map lookup efficiency too.
+			key = key.intern();
 			LOG.debugf( "Adding type registration %s -> %s", key, type );
 			final Type old = registry.put( key, type );
 			if ( old != null && old != type ) {
@@ -155,6 +167,12 @@ public class BasicTypeRegistry implements Serializable {
 
 	public void register(CompositeUserType type, String[] keys) {
 		register( new CompositeCustomType( type, keys ) );
+	}
+
+	public void unregister(String... keys) {
+		for ( String key : keys ) {
+			registry.remove( key );
+		}
 	}
 
 	public BasicType getRegisteredType(String key) {

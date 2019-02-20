@@ -24,23 +24,26 @@ import org.hibernate.annotations.SQLDeleteAll;
 import org.hibernate.annotations.SQLInsert;
 import org.hibernate.annotations.SQLUpdate;
 import org.hibernate.annotations.Where;
+import org.hibernate.dialect.H2Dialect;
+import org.hibernate.dialect.PostgreSQL82Dialect;
 import org.hibernate.jpa.test.BaseEntityManagerFunctionalTestCase;
 
+import org.hibernate.testing.RequiresDialect;
 import org.junit.Before;
 import org.junit.Test;
 
 import org.jboss.logging.Logger;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
 /**
  * @author Vlad Mihalcea
  */
+@RequiresDialect(H2Dialect.class)
+@RequiresDialect(PostgreSQL82Dialect.class)
 public class CustomSQLTest extends BaseEntityManagerFunctionalTestCase {
-
-	private static final Logger log = Logger.getLogger( CustomSQLTest.class );
 
 	@Override
 	protected Class<?>[] getAnnotatedClasses() {
@@ -96,7 +99,6 @@ public class CustomSQLTest extends BaseEntityManagerFunctionalTestCase {
 		} );
 	}
 
-
 	//tag::sql-custom-crud-example[]
 	@Entity(name = "Person")
 	@SQLInsert(
@@ -104,9 +106,11 @@ public class CustomSQLTest extends BaseEntityManagerFunctionalTestCase {
 		check = ResultCheckStyle.COUNT
 	)
 	@SQLUpdate(
-		sql = "UPDATE person SET name = ? where id = ? ")
+		sql = "UPDATE person SET name = ? where id = ? "
+	)
 	@SQLDelete(
-		sql = "UPDATE person SET valid = false WHERE id = ? ")
+		sql = "UPDATE person SET valid = false WHERE id = ? "
+	)
 	@Loader(namedQuery = "find_valid_person")
 	@NamedNativeQueries({
 		@NamedNativeQuery(
@@ -133,6 +137,10 @@ public class CustomSQLTest extends BaseEntityManagerFunctionalTestCase {
 		@Where( clause = "valid = true" )
 		private List<String> phones = new ArrayList<>();
 
+		//Getters and setters are omitted for brevity
+
+	//end::sql-custom-crud-example[]
+
 		public Long getId() {
 			return id;
 		}
@@ -152,7 +160,7 @@ public class CustomSQLTest extends BaseEntityManagerFunctionalTestCase {
 		public List<String> getPhones() {
 			return phones;
 		}
+	//tag::sql-custom-crud-example[]
 	}
 	//end::sql-custom-crud-example[]
-
 }

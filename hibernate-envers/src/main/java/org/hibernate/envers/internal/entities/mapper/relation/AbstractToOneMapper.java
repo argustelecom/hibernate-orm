@@ -7,6 +7,8 @@
 package org.hibernate.envers.internal.entities.mapper.relation;
 
 import java.io.Serializable;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.List;
 import java.util.Map;
 
@@ -15,8 +17,8 @@ import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.envers.boot.internal.EnversService;
 import org.hibernate.envers.internal.entities.EntityConfiguration;
 import org.hibernate.envers.internal.entities.PropertyData;
+import org.hibernate.envers.internal.entities.mapper.AbstractPropertyMapper;
 import org.hibernate.envers.internal.entities.mapper.PersistentCollectionChangeData;
-import org.hibernate.envers.internal.entities.mapper.PropertyMapper;
 import org.hibernate.envers.internal.reader.AuditReaderImplementor;
 import org.hibernate.envers.internal.tools.ReflectionTools;
 import org.hibernate.property.access.spi.Setter;
@@ -26,8 +28,9 @@ import org.hibernate.service.ServiceRegistry;
  * Base class for property mappers that manage to-one relation.
  *
  * @author Lukasz Antoniak (lukasz dot antoniak at gmail dot com)
+ * @author Chris Cranford
  */
-public abstract class AbstractToOneMapper implements PropertyMapper {
+public abstract class AbstractToOneMapper extends AbstractPropertyMapper {
 	private final ServiceRegistry serviceRegistry;
 	private final PropertyData propertyData;
 
@@ -87,8 +90,28 @@ public abstract class AbstractToOneMapper implements PropertyMapper {
 	}
 
 	protected void setPropertyValue(Object targetObject, Object value) {
-		final Setter setter = ReflectionTools.getSetter( targetObject.getClass(), propertyData, serviceRegistry );
-		setter.set( targetObject, value, null );
+		if ( isDynamicComponentMap() ) {
+			@SuppressWarnings("unchecked")
+			final Map<String, Object> map = (Map<String, Object>) targetObject;
+			map.put( propertyData.getBeanName(), value );
+		}
+		else {
+			AccessController.doPrivileged(
+					new PrivilegedAction<Object>() {
+						@Override
+						public Object run() {
+							final Setter setter = ReflectionTools.getSetter(
+									targetObject.getClass(),
+									propertyData,
+									serviceRegistry
+							);
+							setter.set( targetObject, value, null );
+
+							return null;
+						}
+					}
+			);
+		}
 	}
 
 	/**
@@ -134,5 +157,10 @@ public abstract class AbstractToOneMapper implements PropertyMapper {
 		public boolean isAudited() {
 			return audited;
 		}
+	}
+
+	@Override
+	public boolean hasPropertiesWithModifiedFlag() {
+		return propertyData != null && propertyData.isUsingModifiedFlag();
 	}
 }

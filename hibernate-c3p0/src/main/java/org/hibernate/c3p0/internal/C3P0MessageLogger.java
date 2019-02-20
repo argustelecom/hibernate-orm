@@ -8,7 +8,6 @@ package org.hibernate.c3p0.internal;
 
 import java.sql.SQLException;
 
-import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.log.ConnectionPoolingLogger;
 
 import org.jboss.logging.annotations.Cause;

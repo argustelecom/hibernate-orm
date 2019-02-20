@@ -10,16 +10,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collections;
 
-import org.hibernate.LockOptions;
-import org.hibernate.Session;
+import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.CoreLogging;
+import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.loader.plan.exec.process.internal.AbstractRowReader;
 import org.hibernate.loader.plan.exec.process.internal.EntityReferenceInitializerImpl;
 import org.hibernate.loader.plan.exec.process.internal.EntityReturnReader;
 import org.hibernate.loader.plan.exec.process.internal.ResultSetProcessingContextImpl;
-import org.hibernate.loader.plan.exec.process.internal.ResultSetProcessorHelper;
 import org.hibernate.loader.plan.exec.process.spi.EntityReferenceInitializer;
 import org.hibernate.loader.plan.exec.process.spi.ReaderCollector;
 import org.hibernate.loader.plan.exec.process.spi.ResultSetProcessingContext;
@@ -30,12 +29,9 @@ import org.hibernate.loader.plan.exec.spi.EntityReferenceAliases;
 import org.hibernate.loader.plan.spi.EntityReturn;
 import org.hibernate.loader.plan.spi.LoadPlan;
 import org.hibernate.loader.plan.spi.QuerySpace;
-import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.persister.entity.Joinable;
 import org.hibernate.persister.entity.OuterJoinLoadable;
 import org.hibernate.persister.entity.Queryable;
-import org.hibernate.type.CompositeType;
-import org.hibernate.type.Type;
 
 import org.jboss.logging.Logger;
 
@@ -89,6 +85,24 @@ public class EntityLoadQueryDetails extends AbstractLoadQueryDetails {
 		generate();
 	}
 
+	protected EntityLoadQueryDetails(
+			EntityLoadQueryDetails initialEntityLoadQueryDetails,
+			QueryBuildingParameters buildingParameters) {
+		this(
+				initialEntityLoadQueryDetails.getLoadPlan(),
+				initialEntityLoadQueryDetails.getKeyColumnNames(),
+				new AliasResolutionContextImpl( initialEntityLoadQueryDetails.getSessionFactory() ),
+				(EntityReturn) initialEntityLoadQueryDetails.getRootReturn(),
+				buildingParameters,
+				initialEntityLoadQueryDetails.getSessionFactory()
+		);
+	}
+
+	public boolean hasCollectionInitializers() {
+		return CollectionHelper.isNotEmpty( readerCollector.getArrayReferenceInitializers() ) ||
+				CollectionHelper.isNotEmpty( readerCollector.getNonArrayCollectionReferenceInitializers() );
+	}
+
 	private EntityReturn getRootEntityReturn() {
 		return (EntityReturn) getRootReturn();
 	}
@@ -105,15 +119,16 @@ public class EntityLoadQueryDetails extends AbstractLoadQueryDetails {
 		final String fromTableFragment;
 		final String rootAlias = entityReferenceAliases.getTableAlias();
 		final OuterJoinLoadable outerJoinLoadable = (OuterJoinLoadable) getRootEntityReturn().getEntityPersister();
+		final Dialect dialect = getSessionFactory().getJdbcServices().getJdbcEnvironment().getDialect();
 		if ( getQueryBuildingParameters().getLockOptions() != null ) {
-			fromTableFragment = getSessionFactory().getDialect().appendLockHint(
+			fromTableFragment = dialect.appendLockHint(
 					getQueryBuildingParameters().getLockOptions(),
 					outerJoinLoadable.fromTableFragment( rootAlias )
 			);
 			select.setLockOptions( getQueryBuildingParameters().getLockOptions() );
 		}
 		else if ( getQueryBuildingParameters().getLockMode() != null ) {
-			fromTableFragment = getSessionFactory().getDialect().appendLockHint(
+			fromTableFragment = dialect.appendLockHint(
 					getQueryBuildingParameters().getLockMode(),
 					outerJoinLoadable.fromTableFragment( rootAlias )
 			);
@@ -148,6 +163,18 @@ public class EntityLoadQueryDetails extends AbstractLoadQueryDetails {
 
 	@Override
 	protected void applyRootReturnOrderByFragments(SelectStatementBuilder selectStatementBuilder) {
+	}
+
+	@Override
+	protected boolean isSubselectLoadingEnabled(FetchStats fetchStats) {
+		return getQueryBuildingParameters().getBatchSize() > 1 &&
+				fetchStats != null &&
+				fetchStats.hasSubselectFetches();
+	}
+
+	@Override
+	protected boolean shouldUseOptionalEntityInstance() {
+		return getQueryBuildingParameters().getBatchSize() < 2;
 	}
 
 	@Override
@@ -217,38 +244,14 @@ public class EntityLoadQueryDetails extends AbstractLoadQueryDetails {
 			// if the entity reference we are hydrating is a Return, it is possible that its EntityKey is
 			// supplied by the QueryParameter optional entity information
 			if ( context.shouldUseOptionalEntityInformation() && context.getQueryParameters().getOptionalId() != null ) {
-				EntityKey entityKey = ResultSetProcessorHelper.getOptionalObjectKey(
-						context.getQueryParameters(),
-						context.getSession()
+				final EntityKey entityKey = context.getSession().generateEntityKey(
+						context.getQueryParameters().getOptionalId(),
+						processingState.getEntityReference().getEntityPersister()
 				);
 				processingState.registerIdentifierHydratedForm( entityKey.getIdentifier() );
 				processingState.registerEntityKey( entityKey );
-				final EntityPersister entityPersister = processingState.getEntityReference().getEntityPersister();
-				if ( entityPersister.getIdentifierType().isComponentType()  ) {
-					final CompositeType identifierType = (CompositeType) entityPersister.getIdentifierType();
-					if ( !identifierType.isEmbedded() ) {
-						addKeyManyToOnesToSession(
-								context,
-								identifierType,
-								entityKey.getIdentifier()
-						);
-					}
-				}
 			}
 			return super.readRow( resultSet, context );
-		}
-
-		private void addKeyManyToOnesToSession(ResultSetProcessingContextImpl context, CompositeType componentType, Object component ) {
-			for ( int i = 0 ; i < componentType.getSubtypes().length ; i++ ) {
-				final Type subType = componentType.getSubtypes()[ i ];
-				final Object subValue = componentType.getPropertyValue( component, i, context.getSession() );
-				if ( subType.isEntityType() ) {
-					( (Session) context.getSession() ).buildLockRequest( LockOptions.NONE ).lock( subValue );
-				}
-				else if ( subType.isComponentType() ) {
-					addKeyManyToOnesToSession( context, (CompositeType) subType, subValue  );
-				}
-			}
 		}
 
 		@Override

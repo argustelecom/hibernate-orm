@@ -38,16 +38,12 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	private final transient JdbcObserver observer;
 	private final transient SqlExceptionHelper sqlExceptionHelper;
 
-	private final transient PhysicalConnectionHandlingMode physicalConnectionHandlingMode;
+	private final transient PhysicalConnectionHandlingMode connectionHandlingMode;
 
 	private transient Connection physicalConnection;
 	private boolean closed;
 
-	public LogicalConnectionManagedImpl(
-			JdbcConnectionAccess jdbcConnectionAccess,
-			JdbcSessionContext jdbcSessionContext) {
-		this( jdbcConnectionAccess, jdbcSessionContext, new ResourceRegistryStandardImpl() );
-	}
+	private boolean providerDisablesAutoCommit;
 
 	public LogicalConnectionManagedImpl(
 			JdbcConnectionAccess jdbcConnectionAccess,
@@ -55,16 +51,43 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 			ResourceRegistry resourceRegistry) {
 		this.jdbcConnectionAccess = jdbcConnectionAccess;
 		this.observer = jdbcSessionContext.getObserver();
+		this.resourceRegistry = resourceRegistry;
+
+		this.connectionHandlingMode = determineConnectionHandlingMode(
+				jdbcSessionContext.getPhysicalConnectionHandlingMode(),
+				jdbcConnectionAccess
+
+		);
 
 		this.sqlExceptionHelper = jdbcSessionContext.getServiceRegistry()
 				.getService( JdbcServices.class )
 				.getSqlExceptionHelper();
-		this.physicalConnectionHandlingMode = jdbcSessionContext.getPhysicalConnectionHandlingMode();
-		this.resourceRegistry = resourceRegistry;
 
-		if ( physicalConnectionHandlingMode.getAcquisitionMode() == ConnectionAcquisitionMode.IMMEDIATELY ) {
+		if ( connectionHandlingMode.getAcquisitionMode() == ConnectionAcquisitionMode.IMMEDIATELY ) {
 			acquireConnectionIfNeeded();
 		}
+
+		this.providerDisablesAutoCommit = jdbcSessionContext.doesConnectionProviderDisableAutoCommit();
+		if ( providerDisablesAutoCommit ) {
+			log.debug(
+					"`hibernate.connection.provider_disables_autocommit` was enabled.  This setting should only be " +
+							"enabled when you are certain that the Connections given to Hibernate by the " +
+							"ConnectionProvider have auto-commit disabled.  Enabling this setting when the " +
+							"Connections do not have auto-commit disabled will lead to Hibernate executing " +
+							"SQL operations outside of any JDBC/SQL transaction."
+			);
+		}
+	}
+
+	private PhysicalConnectionHandlingMode determineConnectionHandlingMode(
+			PhysicalConnectionHandlingMode connectionHandlingMode,
+			JdbcConnectionAccess jdbcConnectionAccess) {
+		if ( connectionHandlingMode.getReleaseMode() == ConnectionReleaseMode.AFTER_STATEMENT
+				&& !jdbcConnectionAccess.supportsAggressiveRelease() ) {
+			return PhysicalConnectionHandlingMode.DELAYED_ACQUISITION_AND_RELEASE_AFTER_TRANSACTION;
+		}
+
+		return connectionHandlingMode;
 	}
 
 	private LogicalConnectionManagedImpl(
@@ -74,7 +97,6 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 		this( jdbcConnectionAccess, jdbcSessionContext, new ResourceRegistryStandardImpl() );
 		this.closed = closed;
 	}
-
 
 	private Connection acquireConnectionIfNeeded() {
 		if ( physicalConnection == null ) {
@@ -99,6 +121,11 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	}
 
 	@Override
+	public PhysicalConnectionHandlingMode getConnectionHandlingMode() {
+		return connectionHandlingMode;
+	}
+
+	@Override
 	public boolean isPhysicallyConnected() {
 		return physicalConnection != null;
 	}
@@ -113,7 +140,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	public void afterStatement() {
 		super.afterStatement();
 
-		if ( physicalConnectionHandlingMode.getReleaseMode() == ConnectionReleaseMode.AFTER_STATEMENT ) {
+		if ( connectionHandlingMode.getReleaseMode() == ConnectionReleaseMode.AFTER_STATEMENT ) {
 			if ( getResourceRegistry().hasRegisteredResources() ) {
 				log.debug( "Skipping aggressive release of JDBC Connection after-statement due to held resources" );
 			}
@@ -128,7 +155,7 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 	public void afterTransaction() {
 		super.afterTransaction();
 
-		if ( physicalConnectionHandlingMode.getReleaseMode() != ConnectionReleaseMode.ON_CLOSE ) {
+		if ( connectionHandlingMode.getReleaseMode() != ConnectionReleaseMode.ON_CLOSE ) {
 			// NOTE : we check for !ON_CLOSE here (rather than AFTER_TRANSACTION) to also catch AFTER_STATEMENT cases
 			// that were circumvented due to held resources
 			log.debug( "Initiating JDBC connection release from afterTransaction" );
@@ -231,15 +258,21 @@ public class LogicalConnectionManagedImpl extends AbstractLogicalConnectionImple
 
 	@Override
 	public void begin() {
-		initiallyAutoCommit = determineInitialAutoCommitMode( getConnectionForTransactionManagement() );
+		initiallyAutoCommit = !doConnectionsFromProviderHaveAutoCommitDisabled() && determineInitialAutoCommitMode(
+				getConnectionForTransactionManagement() );
 		super.begin();
 	}
 
 	@Override
 	protected void afterCompletion() {
-		afterTransaction();
-
 		resetConnection( initiallyAutoCommit );
 		initiallyAutoCommit = false;
+
+		afterTransaction();
+	}
+
+	@Override
+	protected boolean doConnectionsFromProviderHaveAutoCommitDisabled() {
+		return providerDisablesAutoCommit;
 	}
 }

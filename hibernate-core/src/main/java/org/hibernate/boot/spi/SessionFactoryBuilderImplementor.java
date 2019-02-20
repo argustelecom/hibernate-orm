@@ -15,5 +15,21 @@ import org.hibernate.boot.SessionFactoryBuilder;
  * @author Steve Ebersole
  */
 public interface SessionFactoryBuilderImplementor extends SessionFactoryBuilder {
-	public SessionFactoryOptions buildSessionFactoryOptions();
+
+	void disableJtaTransactionAccess();
+
+	default void disableRefreshDetachedEntity() {
+	}
+
+	/**
+	 * @see org.hibernate.cfg.AvailableSettings#JDBC_TYLE_PARAMS_ZERO_BASE
+	 */
+	void enableJdbcStyleParamsZeroBased();
+
+	/**
+	 * Build the SessionFactoryOptions that will ultimately be passed to SessionFactoryImpl constructor.
+	 *
+	 * @return The options.
+	 */
+	SessionFactoryOptions buildSessionFactoryOptions();
 }

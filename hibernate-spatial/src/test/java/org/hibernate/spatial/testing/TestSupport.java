@@ -9,14 +9,14 @@ package org.hibernate.spatial.testing;
 
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.engine.config.spi.ConfigurationService;
-
 import org.hibernate.service.ServiceRegistry;
+
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 
 
 /**
  * @author Karel Maesen, Geovise BVBA
- *         creation-date: Sep 30, 2010
+ * creation-date: Sep 30, 2010
  */
 public abstract class TestSupport {
 
@@ -27,8 +27,8 @@ public abstract class TestSupport {
 		return new DataSourceUtils( driver(), url(), user(), passwd(), getSQLExpressionTemplate() );
 	}
 
-	public GeometryEquality createGeometryEquality() {
-		return new GeometryEquality();
+	public JTSGeometryEquality createGeometryEquality() {
+		return new JTSGeometryEquality();
 	}
 
 	public abstract TestData createTestData(BaseCoreFunctionalTestCase testcase);

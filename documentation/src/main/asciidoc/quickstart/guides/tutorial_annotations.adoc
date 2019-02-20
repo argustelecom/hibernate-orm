@@ -79,7 +79,7 @@ public Date getDate() {
 ----
 ====
 
-As in <<hibernate-gsg-tutorial-basic-mapping, the `date` property needs special handling to account for its special
+As in <<hibernate-gsg-tutorial-basic-mapping>>, the `date` property needs special handling to account for its special
 naming and its SQL type.
 
 Attributes of an entity are considered persistent by default when mapping with annotations, which is why we don't see
@@ -97,7 +97,8 @@ any mapping information associated with `title`.
 === Take it further!
 
 .Practice Exercises
-- [ ] Add an association to the `Event` entity to model a message thread. Use the _Developer Guide_
-as a guide.
-- [ ] Add a callback to receive notifications when an `Event` is created, updated or deleted.  Try the same with
-an event listener.  Use the _Developer Guide_ as a guide.
+- [ ] Add an association to the `Event` entity to model a message thread. Use the
+http://docs.jboss.org/hibernate/orm/current/userguide/html_single/Hibernate_User_Guide.html[_User Guide_] for more details.
+- [ ] Add a callback to receive notifications when an `Event` is created, updated or deleted.
+Try the same with an event listener. Use the
+http://docs.jboss.org/hibernate/orm/current/userguide/html_single/Hibernate_User_Guide.html[_User Guide_] for more details.

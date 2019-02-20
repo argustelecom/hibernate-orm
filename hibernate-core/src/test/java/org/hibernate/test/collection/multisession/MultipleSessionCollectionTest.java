@@ -34,9 +34,6 @@ import javax.persistence.JoinColumn;
 import javax.persistence.OneToMany;
 import javax.persistence.Table;
 
-import org.jboss.logging.Logger;
-import org.junit.Test;
-
 import org.hibernate.Hibernate;
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
@@ -44,8 +41,12 @@ import org.hibernate.collection.internal.AbstractPersistentCollection;
 import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.engine.spi.CollectionEntry;
 import org.hibernate.engine.spi.SessionImplementor;
+
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+import org.junit.Test;
+
+import org.jboss.logging.Logger;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -56,7 +57,6 @@ import static org.junit.Assert.fail;
  * @author Gail Badner
  */
 public class MultipleSessionCollectionTest extends BaseCoreFunctionalTestCase {
-	private static final Logger log = Logger.getLogger( MultipleSessionCollectionTest.class );
 
 	@Test
 	@TestForIssue( jiraKey = "HHH-9518" )

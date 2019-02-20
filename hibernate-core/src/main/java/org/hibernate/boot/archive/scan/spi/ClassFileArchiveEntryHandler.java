@@ -61,7 +61,7 @@ public class ClassFileArchiveEntryHandler implements ArchiveEntryHandler {
 			return new ClassFile( dataInputStream );
 		}
 		catch (IOException e) {
-			throw new ArchiveException( "Could not build ClassFile" );
+			throw new ArchiveException( "Could not build ClassFile", e );
 		}
 		finally {
 			try {
@@ -79,7 +79,7 @@ public class ClassFileArchiveEntryHandler implements ArchiveEntryHandler {
 	}
 
 	private ClassDescriptor toClassDescriptor(ClassFile classFile, ArchiveEntry entry) {
-		ClassDescriptor.Categorization categorization = ClassDescriptor.Categorization.OTHER;;
+		ClassDescriptor.Categorization categorization = ClassDescriptor.Categorization.OTHER;
 
 		final AnnotationsAttribute visibleAnnotations = (AnnotationsAttribute) classFile.getAttribute( AnnotationsAttribute.visibleTag );
 		if ( visibleAnnotations != null ) {

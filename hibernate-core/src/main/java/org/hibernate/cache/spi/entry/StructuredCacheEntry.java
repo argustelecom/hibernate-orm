@@ -9,7 +9,6 @@ package org.hibernate.cache.spi.entry;
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.persister.entity.EntityPersister;
@@ -44,11 +43,15 @@ public class StructuredCacheEntry implements CacheEntryStructure {
 		final Object version = map.get( VERSION_KEY );
 		final EntityPersister subclassPersister = factory.getEntityPersister( subclass );
 		final String[] names = subclassPersister.getPropertyNames();
-		final Serializable[] state = new Serializable[names.length];
+		final Serializable[] disassembledState = new Serializable[names.length];
 		for ( int i = 0; i < names.length; i++ ) {
-			state[i] = (Serializable) map.get( names[i] );
+			disassembledState[i] = (Serializable) map.get( names[i] );
 		}
-		return new StandardCacheEntryImpl( state, subclass, version );
+		return new StandardCacheEntryImpl(
+			disassembledState,
+			subclass,
+			version
+		);
 	}
 
 	@Override

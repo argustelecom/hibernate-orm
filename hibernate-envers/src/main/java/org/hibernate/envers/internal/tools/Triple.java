@@ -6,7 +6,7 @@
  */
 package org.hibernate.envers.internal.tools;
 
-import org.hibernate.internal.util.compare.EqualsHelper;
+import java.util.Objects;
 
 /**
  * A triple of objects.
@@ -50,9 +50,9 @@ public class Triple<T1, T2, T3> {
 		}
 
 		final Triple other = (Triple) o;
-		return EqualsHelper.equals( obj1, other.obj1 )
-				&& EqualsHelper.equals( obj2, other.obj2 )
-				&& EqualsHelper.equals( obj3, other.obj3 );
+		return Objects.equals( obj1, other.obj1 )
+				&& Objects.equals( obj2, other.obj2 )
+				&& Objects.equals( obj3, other.obj3 );
 	}
 
 	@Override
@@ -65,6 +65,6 @@ public class Triple<T1, T2, T3> {
 	}
 
 	public static <T1, T2, T3> Triple<T1, T2, T3> make(T1 obj1, T2 obj2, T3 obj3) {
-		return new Triple<T1, T2, T3>( obj1, obj2, obj3 );
+		return new Triple<>( obj1, obj2, obj3 );
 	}
 }

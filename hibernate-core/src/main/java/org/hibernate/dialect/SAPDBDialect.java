@@ -6,6 +6,7 @@
  */
 package org.hibernate.dialect;
 
+import java.sql.DatabaseMetaData;
 import java.sql.Types;
 
 import org.hibernate.cfg.Environment;
@@ -17,9 +18,10 @@ import org.hibernate.hql.spi.id.IdTableSupportStandardImpl;
 import org.hibernate.hql.spi.id.MultiTableBulkIdStrategy;
 import org.hibernate.hql.spi.id.local.AfterUseAction;
 import org.hibernate.hql.spi.id.local.LocalTemporaryTableBulkIdStrategy;
-import org.hibernate.internal.util.StringHelper;
 import org.hibernate.sql.CaseFragment;
 import org.hibernate.sql.DecodeCaseFragment;
+import org.hibernate.tool.schema.extract.internal.SequenceInformationExtractorSAPDBDatabaseImpl;
+import org.hibernate.tool.schema.extract.spi.SequenceInformationExtractor;
 import org.hibernate.type.StandardBasicTypes;
 
 /**
@@ -148,17 +150,23 @@ public class SAPDBDialect extends Dialect {
 				.append( " foreign key " )
 				.append( constraintName )
 				.append( " (" )
-				.append( StringHelper.join( ", ", foreignKey ) )
+				.append( String.join( ", ", foreignKey ) )
 				.append( ") references " )
 				.append( referencedTable );
 
 		if ( !referencesPrimaryKey ) {
 			res.append( " (" )
-					.append( StringHelper.join( ", ", primaryKey ) )
+					.append( String.join( ", ", primaryKey ) )
 					.append( ')' );
 		}
 
 		return res.toString();
+	}
+
+	public String getAddForeignKeyConstraintString(
+			String constraintName,
+			String foreignKeyDefinition) {
+		return foreignKeyDefinition;
 	}
 
 	@Override
@@ -193,7 +201,12 @@ public class SAPDBDialect extends Dialect {
 
 	@Override
 	public String getQuerySequencesString() {
-		return "select sequence_name from domain.sequences";
+		return "select * from domain.sequences";
+	}
+
+	@Override
+	public SequenceInformationExtractor getSequenceInformationExtractor() {
+		return SequenceInformationExtractorSAPDBDatabaseImpl.INSTANCE;
 	}
 
 	@Override
@@ -223,5 +236,10 @@ public class SAPDBDialect extends Dialect {
 				AfterUseAction.DROP,
 				null
 		);
+	}
+
+	@Override
+	public boolean supportsJdbcConnectionLobCreation(DatabaseMetaData databaseMetaData) {
+		return false;
 	}
 }

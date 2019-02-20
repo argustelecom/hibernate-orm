@@ -50,7 +50,6 @@ import static org.junit.Assert.assertTrue;
  */
 @RequiresDialect( value = Cache71Dialect.class )
 public class SQLFunctionsInterSystemsTest extends BaseCoreFunctionalTestCase {
-	private static final Logger log = Logger.getLogger( SQLFunctionsInterSystemsTest.class );
 
 	public String[] getMappings() {
 		return new String[] {
@@ -73,7 +72,7 @@ public class SQLFunctionsInterSystemsTest extends BaseCoreFunctionalTestCase {
 		simple.setCount(2);
 		s.save( simple );
 
-		// Test to make sure allocating an specified object operates correctly.
+		// Test to make sure allocating a specified object operates correctly.
 		assertTrue(
 				s.createQuery( "select new org.hibernate.test.legacy.S(s.count, s.address) from Simple s" ).list().size() == 1
 		);

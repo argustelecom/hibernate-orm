@@ -6,8 +6,11 @@
  */
 package org.hibernate;
 
+import java.io.Closeable;
 import java.io.Serializable;
 import java.sql.Connection;
+
+import org.hibernate.query.NativeQuery;
 
 /**
  * A command-oriented API for performing bulk operations against a database.
@@ -25,11 +28,11 @@ import java.sql.Connection;
  *
  * @author Gavin King
  */
-public interface StatelessSession extends SharedSessionContract, java.io.Closeable {
+public interface StatelessSession extends SharedSessionContract, AutoCloseable, Closeable {
 	/**
 	 * Close the stateless session and release the JDBC connection.
 	 */
-	public void close();
+	void close();
 
 	/**
 	 * Insert a row.
@@ -38,7 +41,7 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 *
 	 * @return The identifier of the inserted entity
 	 */
-	public Serializable insert(Object entity);
+	Serializable insert(Object entity);
 
 	/**
 	 * Insert a row.
@@ -48,14 +51,14 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 *
 	 * @return the identifier of the instance
 	 */
-	public Serializable insert(String entityName, Object entity);
+	Serializable insert(String entityName, Object entity);
 
 	/**
 	 * Update a row.
 	 *
 	 * @param entity a detached entity instance
 	 */
-	public void update(Object entity);
+	void update(Object entity);
 
 	/**
 	 * Update a row.
@@ -63,14 +66,14 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 * @param entityName The entityName for the entity to be updated
 	 * @param entity a detached entity instance
 	 */
-	public void update(String entityName, Object entity);
+	void update(String entityName, Object entity);
 
 	/**
 	 * Delete a row.
 	 *
 	 * @param entity a detached entity instance
 	 */
-	public void delete(Object entity);
+	void delete(Object entity);
 
 	/**
 	 * Delete a row.
@@ -78,7 +81,7 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 * @param entityName The entityName for the entity to be deleted
 	 * @param entity a detached entity instance
 	 */
-	public void delete(String entityName, Object entity);
+	void delete(String entityName, Object entity);
 
 	/**
 	 * Retrieve a row.
@@ -88,7 +91,7 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 *
 	 * @return a detached entity instance
 	 */
-	public Object get(String entityName, Serializable id);
+	Object get(String entityName, Serializable id);
 
 	/**
 	 * Retrieve a row.
@@ -98,7 +101,7 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 *
 	 * @return a detached entity instance
 	 */
-	public Object get(Class entityClass, Serializable id);
+	Object get(Class entityClass, Serializable id);
 
 	/**
 	 * Retrieve a row, obtaining the specified lock mode.
@@ -109,7 +112,7 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 *
 	 * @return a detached entity instance
 	 */
-	public Object get(String entityName, Serializable id, LockMode lockMode);
+	Object get(String entityName, Serializable id, LockMode lockMode);
 
 	/**
 	 * Retrieve a row, obtaining the specified lock mode.
@@ -120,14 +123,14 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 *
 	 * @return a detached entity instance
 	 */
-	public Object get(Class entityClass, Serializable id, LockMode lockMode);
+	Object get(Class entityClass, Serializable id, LockMode lockMode);
 
 	/**
 	 * Refresh the entity instance state from the database.
 	 *
 	 * @param entity The entity to be refreshed.
 	 */
-	public void refresh(Object entity);
+	void refresh(Object entity);
 
 	/**
 	 * Refresh the entity instance state from the database.
@@ -135,7 +138,7 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 * @param entityName The entityName for the entity to be refreshed.
 	 * @param entity The entity to be refreshed.
 	 */
-	public void refresh(String entityName, Object entity);
+	void refresh(String entityName, Object entity);
 
 	/**
 	 * Refresh the entity instance state from the database.
@@ -143,7 +146,7 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 * @param entity The entity to be refreshed.
 	 * @param lockMode The LockMode to be applied.
 	 */
-	public void refresh(Object entity, LockMode lockMode);
+	void refresh(Object entity, LockMode lockMode);
 
 	/**
 	 * Refresh the entity instance state from the database.
@@ -152,7 +155,7 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 * @param entity The entity to be refreshed.
 	 * @param lockMode The LockMode to be applied.
 	 */
-	public void refresh(String entityName, Object entity, LockMode lockMode);
+	void refresh(String entityName, Object entity, LockMode lockMode);
 
 	/**
 	 * Returns the current JDBC connection associated with this
@@ -168,5 +171,8 @@ public interface StatelessSession extends SharedSessionContract, java.io.Closeab
 	 * @return The connection associated with this stateless session
 	 */
 	@Deprecated
-	public Connection connection();
+	Connection connection();
+
+	@Override
+	NativeQuery createSQLQuery(String queryString);
 }

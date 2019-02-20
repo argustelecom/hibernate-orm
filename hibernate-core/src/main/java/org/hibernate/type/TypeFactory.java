@@ -10,15 +10,14 @@ import java.io.Serializable;
 import java.util.Comparator;
 import java.util.Properties;
 
-import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
-import org.hibernate.boot.cfgxml.spi.CfgXmlAccessService;
 import org.hibernate.classic.Lifecycle;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.internal.SessionFactoryRegistry;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.tuple.component.ComponentMetamodel;
+import org.hibernate.type.spi.TypeConfiguration;
+import org.hibernate.type.spi.TypeConfigurationAware;
 import org.hibernate.usertype.CompositeUserType;
 import org.hibernate.usertype.ParameterizedType;
 import org.hibernate.usertype.UserType;
@@ -34,64 +33,32 @@ import static org.hibernate.internal.CoreLogging.messageLogger;
  *
  * @author Gavin King
  * @author Steve Ebersole
+ *
+ * @deprecated Use {@link TypeConfiguration} instead
  */
+@Deprecated
 @SuppressWarnings({"unchecked"})
 public final class TypeFactory implements Serializable {
 	private static final CoreMessageLogger LOG = messageLogger( TypeFactory.class );
 
-	private final TypeScopeImpl typeScope = new TypeScopeImpl();
-
-	public static interface TypeScope extends Serializable {
-		public SessionFactoryImplementor resolveFactory();
+	/**
+	 * @deprecated Use {@link TypeConfiguration}/{@link TypeConfiguration.Scope} instead
+	 */
+	@Deprecated
+	public interface TypeScope extends Serializable {
+		TypeConfiguration getTypeConfiguration();
 	}
 
-	private static class TypeScopeImpl implements TypeFactory.TypeScope {
-		private transient SessionFactoryImplementor factory;
-		private String sessionFactoryName;
-		private String sessionFactoryUuid;
+	private final TypeConfiguration typeConfiguration;
+	private final TypeScope typeScope;
 
-		public void injectSessionFactory(SessionFactoryImplementor factory) {
-			if ( this.factory != null ) {
-				LOG.scopingTypesToSessionFactoryAfterAlreadyScoped( this.factory, factory );
-			}
-			else {
-				LOG.tracev( "Scoping types to session factory {0}", factory );
-				sessionFactoryUuid = factory.getUuid();
-				String sfName = factory.getSettings().getSessionFactoryName();
-				if ( sfName == null ) {
-					final CfgXmlAccessService cfgXmlAccessService = factory.getServiceRegistry()
-							.getService( CfgXmlAccessService.class );
-					if ( cfgXmlAccessService.getAggregatedConfig() != null ) {
-						sfName = cfgXmlAccessService.getAggregatedConfig().getSessionFactoryName();
-					}
-				}
-				sessionFactoryName = sfName;
-			}
-			this.factory = factory;
-		}
-
-		public SessionFactoryImplementor resolveFactory() {
-			if ( factory == null ) {
-				factory = (SessionFactoryImplementor) SessionFactoryRegistry.INSTANCE.findSessionFactory(
-						sessionFactoryUuid,
-						sessionFactoryName
-				);
-				if ( factory == null ) {
-					throw new HibernateException(
-							"Could not find a SessionFactory [uuid=" + sessionFactoryUuid + ",name=" + sessionFactoryName + "]"
-					);
-				}
-			}
-			return factory;
-		}
-	}
-
-	public void injectSessionFactory(SessionFactoryImplementor factory) {
-		typeScope.injectSessionFactory( factory );
+	public TypeFactory(TypeConfiguration typeConfiguration) {
+		this.typeConfiguration = typeConfiguration;
+		this.typeScope = (TypeScope) () -> typeConfiguration;
 	}
 
 	public SessionFactoryImplementor resolveSessionFactory() {
-		return typeScope.resolveFactory();
+		return typeConfiguration.getSessionFactory();
 	}
 
 	public Type byClass(Class clazz, Properties parameters) {
@@ -190,7 +157,17 @@ public final class TypeFactory implements Serializable {
 	}
 
 	public CustomType custom(Class<UserType> typeClass, Properties parameters) {
-		return custom( typeClass, parameters, typeScope );
+		try {
+			UserType userType = typeClass.newInstance();
+			if ( TypeConfigurationAware.class.isInstance( userType ) ) {
+				( (TypeConfigurationAware) userType ).setTypeConfiguration( typeConfiguration );
+			}
+			injectParameters( userType, parameters );
+			return new CustomType( userType );
+		}
+		catch (Exception e) {
+			throw new MappingException( "Unable to instantiate custom type: " + typeClass.getName(), e );
+		}
 	}
 
 	/**
@@ -223,6 +200,11 @@ public final class TypeFactory implements Serializable {
 
 	// one-to-one type builders ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+	/**
+	 * @deprecated Use {@link TypeFactory#oneToOne(String, ForeignKeyDirection, boolean, String, boolean, boolean, String, String, boolean)}
+	 *  instead.
+	 */
+	@Deprecated
 	public EntityType oneToOne(
 			String persistentClass,
 			ForeignKeyDirection foreignKeyType,
@@ -232,9 +214,39 @@ public final class TypeFactory implements Serializable {
 			boolean unwrapProxy,
 			String entityName,
 			String propertyName) {
+		return oneToOne( persistentClass, foreignKeyType, referenceToPrimaryKey, uniqueKeyPropertyName, lazy, unwrapProxy, entityName, propertyName, foreignKeyType != ForeignKeyDirection.TO_PARENT );
+	}
+
+	/**
+	 * @deprecated Use {@link TypeFactory#specialOneToOne(String, ForeignKeyDirection, boolean, String, boolean, boolean, String, String, boolean)}
+	 *  instead.
+	 */
+	@Deprecated
+	public EntityType specialOneToOne(
+			String persistentClass,
+			ForeignKeyDirection foreignKeyType,
+			boolean referenceToPrimaryKey,
+			String uniqueKeyPropertyName,
+			boolean lazy,
+			boolean unwrapProxy,
+			String entityName,
+			String propertyName) {
+		return specialOneToOne( persistentClass, foreignKeyType, referenceToPrimaryKey, uniqueKeyPropertyName, lazy, unwrapProxy, entityName, propertyName, foreignKeyType != ForeignKeyDirection.TO_PARENT );
+	}
+
+	public EntityType oneToOne(
+			String persistentClass,
+			ForeignKeyDirection foreignKeyType,
+			boolean referenceToPrimaryKey,
+			String uniqueKeyPropertyName,
+			boolean lazy,
+			boolean unwrapProxy,
+			String entityName,
+			String propertyName,
+			boolean constrained) {
 		return new OneToOneType(
 				typeScope, persistentClass, foreignKeyType, referenceToPrimaryKey,
-				uniqueKeyPropertyName, lazy, unwrapProxy, entityName, propertyName
+				uniqueKeyPropertyName, lazy, unwrapProxy, entityName, propertyName, constrained
 		);
 	}
 
@@ -246,10 +258,12 @@ public final class TypeFactory implements Serializable {
 			boolean lazy,
 			boolean unwrapProxy,
 			String entityName,
-			String propertyName) {
+			String propertyName,
+			boolean constrained) {
 		return new SpecialOneToOneType(
 				typeScope, persistentClass, foreignKeyType, referenceToPrimaryKey,
-				uniqueKeyPropertyName, lazy, unwrapProxy, entityName, propertyName
+				uniqueKeyPropertyName, lazy, unwrapProxy, entityName, propertyName,
+				constrained
 		);
 	}
 
@@ -286,10 +300,35 @@ public final class TypeFactory implements Serializable {
 		);
 	}
 
+	/**
+	 * @deprecated Use {@link #manyToOne(String, boolean, String, String, boolean, boolean, boolean, boolean)} instead.
+	 */
+	@Deprecated
 	public EntityType manyToOne(
 			String persistentClass,
 			boolean referenceToPrimaryKey,
 			String uniqueKeyPropertyName,
+			boolean lazy,
+			boolean unwrapProxy,
+			boolean ignoreNotFound,
+			boolean isLogicalOneToOne) {
+		return manyToOne(
+				persistentClass,
+				referenceToPrimaryKey,
+				uniqueKeyPropertyName,
+				null,
+				lazy,
+				unwrapProxy,
+				ignoreNotFound,
+				isLogicalOneToOne
+		);
+	}
+
+	public EntityType manyToOne(
+			String persistentClass,
+			boolean referenceToPrimaryKey,
+			String uniqueKeyPropertyName,
+			String propertyName,
 			boolean lazy,
 			boolean unwrapProxy,
 			boolean ignoreNotFound,
@@ -299,6 +338,7 @@ public final class TypeFactory implements Serializable {
 				persistentClass,
 				referenceToPrimaryKey,
 				uniqueKeyPropertyName,
+				propertyName,
 				lazy,
 				unwrapProxy,
 				ignoreNotFound,
@@ -361,7 +401,28 @@ public final class TypeFactory implements Serializable {
 
 	// any type builder ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+	/**
+	 * Get the AnyType with the specified parameters.
+	 *
+	 * @param metaType meta type
+	 * @param identifierType identifier type
+	 * @return AnyType
+	 * @deprecated use {@link TypeFactory#any(Type, Type, boolean)} instead
+	 */
+	@Deprecated
 	public Type any(Type metaType, Type identifierType) {
-		return new AnyType( typeScope, metaType, identifierType );
+		return any( metaType, identifierType, true );
+	}
+
+	/**
+	 * Get the AnyType with the specified parameters.
+	 *
+	 * @param metaType meta type
+	 * @param identifierType identifier type
+	 * @param lazy is teh underlying proeprty lazy
+	 * @return AnyType
+	 */
+	public Type any(Type metaType, Type identifierType, boolean lazy) {
+		return new AnyType( typeScope, metaType, identifierType, lazy );
 	}
 }

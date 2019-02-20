@@ -9,6 +9,7 @@ package org.hibernate.userguide.caching;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import javax.cache.configuration.MutableConfiguration;
 import javax.persistence.Cacheable;
 import javax.persistence.CascadeType;
 import javax.persistence.Entity;
@@ -20,7 +21,7 @@ import javax.persistence.OneToMany;
 import javax.persistence.Version;
 
 import org.hibernate.annotations.CacheConcurrencyStrategy;
-import org.hibernate.cache.ehcache.EhCacheRegionFactory;
+import org.hibernate.cache.jcache.JCacheHelper;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.jpa.test.BaseEntityManagerFunctionalTestCase;
 
@@ -28,7 +29,7 @@ import org.junit.Test;
 
 import org.jboss.logging.Logger;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 
 /**
@@ -36,9 +37,25 @@ import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
  */
 public class NonStrictReadWriteCacheTest extends BaseEntityManagerFunctionalTestCase {
 
-	private static final Logger log = Logger.getLogger( NonStrictReadWriteCacheTest.class );
+	@Override
+	public void buildEntityManagerFactory() {
+		JCacheHelper.locateStandardCacheManager().createCache(
+				"hibernate.test.org.hibernate.userguide.caching.NonStrictReadWriteCacheTest$Person",
+				new MutableConfiguration<>()
+		);
+		JCacheHelper.locateStandardCacheManager().createCache(
+				"hibernate.test.org.hibernate.userguide.caching.NonStrictReadWriteCacheTest$Phone",
+				new MutableConfiguration<>()
+		);
+		JCacheHelper.locateStandardCacheManager().createCache(
+				"hibernate.test.org.hibernate.userguide.caching.NonStrictReadWriteCacheTest$Person.phones",
+				new MutableConfiguration<>()
+		);
 
-    @Override
+		super.buildEntityManagerFactory();
+	}
+
+	@Override
     protected Class<?>[] getAnnotatedClasses() {
         return new Class<?>[] {
             Person.class,
@@ -50,7 +67,7 @@ public class NonStrictReadWriteCacheTest extends BaseEntityManagerFunctionalTest
     @SuppressWarnings( "unchecked" )
     protected void addConfigOptions(Map options) {
         options.put( AvailableSettings.USE_SECOND_LEVEL_CACHE, Boolean.TRUE.toString() );
-        options.put( AvailableSettings.CACHE_REGION_FACTORY, EhCacheRegionFactory.class.getName() );
+        options.put( AvailableSettings.CACHE_REGION_FACTORY, "jcache" );
     }
 
     @Test
@@ -147,6 +164,10 @@ public class NonStrictReadWriteCacheTest extends BaseEntityManagerFunctionalTest
 		@Version
 		private int version;
 
+		//Getters and setters are omitted for brevity
+
+	//end::caching-entity-mapping-example[]
+
 		public Phone() {}
 
 		public Phone(String mobile) {
@@ -168,6 +189,7 @@ public class NonStrictReadWriteCacheTest extends BaseEntityManagerFunctionalTest
 		public void setPerson(Person person) {
 			this.person = person;
 		}
+	//tag::caching-entity-mapping-example[]
 	}
 	//end::caching-entity-mapping-example[]
 }

@@ -194,7 +194,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		dereferenceCollection( (CollectionType) propertyType, true, true, null, parent );
 	}
 
-	public void resolve(boolean generateJoin, boolean implicitJoin, String classAlias, AST parent)
+	public void resolve(boolean generateJoin, boolean implicitJoin, String classAlias, AST parent, AST parentPredicate)
 			throws SemanticException {
 		// If this dot has already been resolved, stop now.
 		if ( isResolved() ) {
@@ -227,7 +227,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		else if ( propertyType.isEntityType() ) {
 			// The property is another class..
 			checkLhsIsNotCollection();
-			dereferenceEntity( (EntityType) propertyType, implicitJoin, classAlias, generateJoin, parent );
+			dereferenceEntity( (EntityType) propertyType, implicitJoin, classAlias, generateJoin, parent, parentPredicate );
 			initText();
 		}
 		else if ( propertyType.isCollectionType() ) {
@@ -248,7 +248,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 
 	private void initText() {
 		String[] cols = getColumns();
-		String text = StringHelper.join( ", ", cols );
+		String text = String.join( ", ", cols );
 		boolean countDistinct = getWalker().isInCountDistinct()
 				&& getWalker().getSessionFactoryHelper().getFactory().getDialect().requiresParensForTupleDistinctCounts();
 		if ( cols.length > 1 &&
@@ -361,7 +361,8 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 			boolean implicitJoin,
 			String classAlias,
 			boolean generateJoin,
-			AST parent) throws SemanticException {
+			AST parent,
+			AST parentPredicate) throws SemanticException {
 		checkForCorrelatedSubquery( "dereferenceEntity" );
 		// three general cases we check here as to whether to render a physical SQL join:
 		// 1) is our parent a DotNode as well?  If so, our property reference is
@@ -393,7 +394,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 			// entity's PK (because 'our' table would know the FK).
 			parentAsDotNode = (DotNode) parent;
 			property = parentAsDotNode.propertyName;
-			joinIsNeeded = generateJoin && !isReferenceToPrimaryKey( parentAsDotNode.propertyName, entityType );
+			joinIsNeeded = generateJoin && !isPropertyEmbeddedInJoinProperties( parentAsDotNode.propertyName );
 		}
 		else if ( !getWalker().isSelectStatement() ) {
 			// in non-select queries, the only time we should need to join is if we are in a subquery from clause
@@ -402,6 +403,10 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		else if ( regressionStyleJoinSuppression ) {
 			// this is the regression style determination which matches the logic of the classic translator
 			joinIsNeeded = generateJoin && ( !getWalker().isInSelect() || !getWalker().isShallowQuery() );
+		}
+		else if ( parentPredicate != null ) {
+			// Never generate a join when we compare entities directly
+			joinIsNeeded = generateJoin;
 		}
 		else {
 			joinIsNeeded = generateJoin || ( getWalker().isInSelect() || getWalker().isInFrom() );
@@ -416,7 +421,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 
 	}
 
-	private boolean isDotNode(AST n) {
+	private static boolean isDotNode(AST n) {
 		return n != null && n.getType() == SqlTokenTypes.DOT;
 	}
 
@@ -478,11 +483,6 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		boolean useFoundFromElement = found && canReuse( classAlias, elem );
 
 		if ( !useFoundFromElement ) {
-			// If this is an implied join in a from element, then use the impled join type which is part of the
-			// tree parser's state (set by the gramamar actions).
-			JoinSequence joinSequence = getSessionFactoryHelper()
-					.createJoinSequence( impliedJoin, propertyType, tableAlias, joinType, joinColumns );
-
 			// If the lhs of the join is a "component join", we need to go back to the
 			// first non-component-join as the origin to properly link aliases and
 			// join columns
@@ -495,6 +495,27 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 			}
 
 			String role = lhsFromElement.getClassName() + "." + propertyName;
+
+			JoinSequence joinSequence;
+
+			if ( joinColumns.length == 0 ) {
+				// When no columns are available, this is a special join that involves multiple subtypes
+				String lhsTableAlias = getLhs().getFromElement().getTableAlias();
+
+				AbstractEntityPersister persister = (AbstractEntityPersister) lhsFromElement.getEntityPersister();
+
+				String[][] polyJoinColumns = persister.getPolymorphicJoinColumns(lhsTableAlias, propertyPath);
+
+				// Special join sequence that uses the poly join columns
+				joinSequence = getSessionFactoryHelper()
+						.createJoinSequence( impliedJoin, propertyType, tableAlias, joinType, polyJoinColumns );
+			}
+			else {
+				// If this is an implied join in a from element, then use the implied join type which is part of the
+				// tree parser's state (set by the grammar actions).
+				joinSequence = getSessionFactoryHelper()
+						.createJoinSequence( impliedJoin, propertyType, tableAlias, joinType, joinColumns );
+			}
 
 			FromElementFactory factory = new FromElementFactory(
 					currentFromClause,
@@ -556,39 +577,43 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	}
 
 	/**
-	 * Is the given property name a reference to the primary key of the associated
-	 * entity construed by the given entity type?
+	 * Is the given property name a reference to the join key of the associated
+	 * entity constructed by the given entity type?
+	 * <p/>
+	 *
+	 * This method resolves the {@code propertyName} as a property of the entity type at the
+	 * {@link #propertyPath} relative to the {@link #getFromElement() FromElement}.
+	 * The implementation does so by invoking {@link FromElement#getPropertyType(String, String)},
+	 * which will resolve the property path against the entity's {@link org.hibernate.persister.entity.PropertyMapping}.
+	 * On initialization of the {@link EntityPersister}, this {@code PropertyMapping} is filled with
+	 * property paths for all the owned properties and associations, and (embedded) identifier or unique key
+	 * properties for owned associations.
+	 * Henceforth, whenever a property path is found in the {@code PropertyMapping} of the {@code EntityPersister}
+	 * of the {@code FromElement}, we know that the property corresponds to a SQL fragment producible from the
+	 * {@code FromElement}, and as such the entity property can be dereferenced (optimized) in the final query.
+	 *
 	 * <p/>
 	 * For example, consider a fragment like order.customer.id
 	 * (where order is a from-element alias).  Here, we'd have:
 	 * propertyName = "id" AND
-	 * owningType = ManyToOneType(Customer)
-	 * and are being asked to determine whether "customer.id" is a reference
-	 * to customer's PK...
+	 * propertyPath = "customer"
+	 * FromElement = Order
+	 * and are being asked to determine whether "customer.id" is a property path of Order
 	 *
 	 * @param propertyName The name of the property to check.
-	 * @param owningType The type represeting the entity "owning" the property
 	 *
 	 * @return True if propertyName references the entity's (owningType->associatedEntity)
-	 *         primary key; false otherwise.
+	 *         join key; false otherwise.
 	 */
-	private boolean isReferenceToPrimaryKey(String propertyName, EntityType owningType) {
-		EntityPersister persister = getSessionFactoryHelper()
-				.getFactory()
-				.getEntityPersister( owningType.getAssociatedEntityName() );
-		if ( persister.getEntityMetamodel().hasNonIdentifierPropertyNamedId() ) {
-			// only the identifier property field name can be a reference to the associated entity's PK...
-			return propertyName.equals( persister.getIdentifierPropertyName() ) && owningType.isReferenceToPrimaryKey();
+	private boolean isPropertyEmbeddedInJoinProperties(String propertyName) {
+		String propertyPath = String.join( ".", this.propertyPath, propertyName );
+		try {
+			Type propertyType = getFromElement().getPropertyType( this.propertyPath, propertyPath );
+			return propertyType != null;
 		}
-		// here, we have two possibilities:
-		// 1) the property-name matches the explicitly identifier property name
-		// 2) the property-name matches the implicit 'id' property name
-		// the referenced node text is the special 'id'
-		if ( EntityPersister.ENTITY_ID.equals( propertyName ) ) {
-			return owningType.isReferenceToPrimaryKey();
+		catch (QueryException e) {
+			return false;
 		}
-		String keyPropertyName = getSessionFactoryHelper().getIdentifierOrUniqueKeyPropertyName( owningType );
-		return keyPropertyName != null && keyPropertyName.equals( propertyName ) && owningType.isReferenceToPrimaryKey();
 	}
 
 	private void checkForCorrelatedSubquery(String methodName) {
@@ -624,8 +649,9 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 			);
 		}
 
-		initText();
 		setPropertyNameAndPath( dotParent ); // Set the unresolved path in this node and the parent.
+		initText();
+
 		// Set the text for the parent.
 		if ( dotParent != null ) {
 			dotParent.dereferenceType = DereferenceType.IDENTIFIER;
@@ -657,7 +683,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 				return null;
 			}
 			// If the lhs is a collection, use CollectionPropertyMapping
-			Type propertyType = fromElement.getPropertyType( propertyName, propertyPath );
+			Type propertyType = fromElement.getPropertyType( propertyPath, propertyPath );
 			LOG.debugf( "getDataType() : %s -> %s", propertyPath, propertyType );
 			super.setDataType( propertyType );
 		}

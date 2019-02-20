@@ -26,7 +26,7 @@ import org.junit.runners.model.TestClass;
  * @author Steve Ebersole
  */
 public final class Helper {
-	public static final String VALIDATE_FAILURE_EXPECTED = "hibernate.test.validatefailureexpected";
+	public static final String VALIDATE_FAILURE_EXPECTED = FailureExpected.VALIDATE_FAILURE_EXPECTED;
 
 	private Helper() {
 	}
@@ -73,6 +73,38 @@ public final class Helper {
 			annotation = testClass.getJavaClass().getAnnotation( annotationClass );
 		}
 		return annotation;
+	}
+
+	/**
+	 * Locates the specified annotation both at the method site and class site.
+	 *
+	 * This is useful for situations where you may apply the same annotation at both the method
+	 * and class level and rather than both sites being mutually exclusive, this permits both
+	 * to be returned instead.
+	 *
+	 * @param annotationClass Annotation class
+	 * @param frameworkMethod Test method.
+	 * @param testClass Test class.
+	 * @param <T> Annotation type.
+	 *
+	 * @return Collection of all annotations detected at both method or class level.
+	 */
+	public static <T extends Annotation> List<T> locateAllAnnotations(
+			Class<T> annotationClass,
+			FrameworkMethod frameworkMethod,
+			TestClass testClass) {
+		final List<T> annotations = new LinkedList<>();
+
+		T annotation = frameworkMethod.getAnnotation( annotationClass );
+		if ( annotation != null ) {
+			annotations.add( annotation );
+		}
+
+		annotation = testClass.getJavaClass().getAnnotation( annotationClass );
+		if ( annotation != null ) {
+			annotations.add( annotation );
+		}
+		return annotations;
 	}
 
 	/**

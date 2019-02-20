@@ -6,16 +6,22 @@
  */
 package org.hibernate.test.ops;
 
+import javax.persistence.PersistenceException;
 import java.util.ArrayList;
 import java.util.Collection;
 
 import org.hibernate.PersistentObjectException;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import org.hibernate.dialect.AbstractHANADialect;
 import org.hibernate.exception.ConstraintViolationException;
 
+import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.RequiresDialectFeature;
+import org.hibernate.testing.SkipForDialect;
 import org.junit.Test;
 
+import static org.hibernate.testing.junit4.ExtraAssertions.assertTyping;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -24,6 +30,7 @@ import static org.junit.Assert.fail;
 /**
  * @author Gavin King
  */
+@RequiresDialectFeature(DialectChecks.SupportsNoColumnInsert.class)
 public class CreateTest extends AbstractOperationTestCase {
 	@Test
 	@SuppressWarnings( {"unchecked"})
@@ -129,8 +136,9 @@ public class CreateTest extends AbstractOperationTestCase {
 			tx.commit();
 			fail( "Expecting constraint failure" );
 		}
-		catch (ConstraintViolationException te) {
+		catch (PersistenceException e){
 			//verify that an exception is thrown!
+			assertTyping(ConstraintViolationException.class, e.getCause());
 		}
 		tx.rollback();
 		s.close();
@@ -145,8 +153,9 @@ public class CreateTest extends AbstractOperationTestCase {
 			tx.commit();
 			assertFalse(true);
 		}
-		catch (ConstraintViolationException te) {
+		catch (PersistenceException e){
 			//verify that an exception is thrown!
+			assertTyping(ConstraintViolationException.class, e.getCause());
 		}
 		tx.rollback();
 		s.close();
@@ -168,8 +177,9 @@ public class CreateTest extends AbstractOperationTestCase {
 			s.persist(dupe);
 			assertFalse(true);
 		}
-		catch (PersistentObjectException poe) {
+		catch (PersistenceException e){
 			//verify that an exception is thrown!
+			assertTyping(PersistentObjectException.class, e.getCause());
 		}
 		tx.rollback();
 		s.close();
@@ -183,8 +193,9 @@ public class CreateTest extends AbstractOperationTestCase {
 			s.persist(nondupe);
 			assertFalse(true);
 		}
-		catch (PersistentObjectException poe) {
+		catch (PersistenceException e){
 			//verify that an exception is thrown!
+			assertTyping(PersistentObjectException.class, e.getCause());
 		}
 		tx.rollback();
 		s.close();
@@ -192,6 +203,7 @@ public class CreateTest extends AbstractOperationTestCase {
 
 	@Test
 	@SuppressWarnings( {"unchecked"})
+	@SkipForDialect(value = AbstractHANADialect.class, comment = " HANA doesn't support tables consisting of only a single auto-generated column")
 	public void testBasic() throws Exception {
 		Session s;
 		Transaction tx;

@@ -6,26 +6,28 @@
  */
 package org.hibernate.test.locking;
 
-import java.util.concurrent.TimeoutException;
+import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+
+import javax.persistence.LockModeType;
 
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
-import org.hibernate.PessimisticLockException;
 import org.hibernate.Session;
-import org.hibernate.cfg.AvailableSettings;
-import org.hibernate.cfg.Configuration;
+import org.hibernate.dialect.SQLServerDialect;
 import org.hibernate.dialect.SybaseASE15Dialect;
-import org.hibernate.exception.GenericJDBCException;
-import org.hibernate.exception.LockAcquisitionException;
+import org.hibernate.dialect.SybaseDialect;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 
 import org.hibernate.testing.SkipForDialect;
-import org.hibernate.testing.SkipForDialects;
 import org.hibernate.testing.TestForIssue;
-import org.hibernate.testing.async.Executable;
-import org.hibernate.testing.async.TimedExecutor;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+import org.hibernate.testing.transaction.TransactionUtil;
+import org.hibernate.testing.util.ExceptionUtil;
 import org.junit.Test;
 
+import static org.hibernate.testing.transaction.TransactionUtil.doInHibernate;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
@@ -35,12 +37,13 @@ import static org.junit.Assert.fail;
  * @author Steve Ebersole
  */
 @TestForIssue( jiraKey = "HHH-5275")
-@SkipForDialects( {
 @SkipForDialect(value=SybaseASE15Dialect.class, strictMatching=true,
 		comment = "skip this test on Sybase ASE 15.5, but run it on 15.7, see HHH-6820")
-})
 public class LockModeTest extends BaseCoreFunctionalTestCase {
+
 	private Long id;
+
+	private CountDownLatch endLatch = new CountDownLatch( 1 );
 
 	@Override
 	protected Class<?>[] getAnnotatedClasses() {
@@ -49,11 +52,9 @@ public class LockModeTest extends BaseCoreFunctionalTestCase {
 
 	@Override
 	public void prepareTest() throws Exception {
-		Session session = sessionFactory().openSession();
-		session.beginTransaction();
-		id = (Long) session.save( new A( "it" ) );
-		session.getTransaction().commit();
-		session.close();
+		doInHibernate( this::sessionFactory, session -> {
+			id = (Long) session.save( new A( "it" ) );
+		} );
 	}
 	@Override
 	protected boolean isCleanupTestDataRequired(){return true;}
@@ -62,30 +63,23 @@ public class LockModeTest extends BaseCoreFunctionalTestCase {
 	@SuppressWarnings( {"deprecation"})
 	public void testLoading() {
 		// open a session, begin a transaction and lock row
-		Session s1 = sessionFactory().openSession();
-		s1.beginTransaction();
-		try {
-			A it = (A) s1.byId( A.class ).with( LockOptions.UPGRADE ).load( id );
+		doInHibernate( this::sessionFactory, session -> {
+			A it = session.byId( A.class ).with( LockOptions.UPGRADE ).load( id );
 			// make sure we got it
 			assertNotNull( it );
 
 			// that initial transaction is still active and so the lock should still be held.
 			// Lets open another session/transaction and verify that we cannot update the row
 			nowAttemptToUpdateRow();
-		}
-		finally {
-			s1.getTransaction().commit();
-			s1.close();
-		}
+		} );
 	}
 
 	@Test
 	public void testLegacyCriteria() {
 		// open a session, begin a transaction and lock row
-		Session s1 = sessionFactory().openSession();
-		s1.beginTransaction();
-		try {
-			A it = (A) s1.createCriteria( A.class )
+		doInHibernate( this::sessionFactory, session -> {
+
+			A it = (A) session.createCriteria( A.class )
 					.setLockMode( LockMode.PESSIMISTIC_WRITE )
 					.uniqueResult();
 			// make sure we got it
@@ -94,20 +88,14 @@ public class LockModeTest extends BaseCoreFunctionalTestCase {
 			// that initial transaction is still active and so the lock should still be held.
 			// Lets open another session/transaction and verify that we cannot update the row
 			nowAttemptToUpdateRow();
-		}
-		finally {
-			s1.getTransaction().commit();
-			s1.close();
-		}
+		} );
 	}
 
 	@Test
 	public void testLegacyCriteriaAliasSpecific() {
 		// open a session, begin a transaction and lock row
-		Session s1 = sessionFactory().openSession();
-		s1.beginTransaction();
-		try {
-			A it = (A) s1.createCriteria( A.class )
+		doInHibernate( this::sessionFactory, session -> {
+			A it = (A) session.createCriteria( A.class )
 					.setLockMode( "this", LockMode.PESSIMISTIC_WRITE )
 					.uniqueResult();
 			// make sure we got it
@@ -116,20 +104,14 @@ public class LockModeTest extends BaseCoreFunctionalTestCase {
 			// that initial transaction is still active and so the lock should still be held.
 			// Lets open another session/transaction and verify that we cannot update the row
 			nowAttemptToUpdateRow();
-		}
-		finally {
-			s1.getTransaction().commit();
-			s1.close();
-		}
+		} );
 	}
 
 	@Test
 	public void testQuery() {
 		// open a session, begin a transaction and lock row
-		Session s1 = sessionFactory().openSession();
-		s1.beginTransaction();
-		try {
-			A it = (A) s1.createQuery( "from A a" )
+		doInHibernate( this::sessionFactory, session -> {
+			A it = (A) session.createQuery( "from A a" )
 					.setLockMode( "a", LockMode.PESSIMISTIC_WRITE )
 					.uniqueResult();
 			// make sure we got it
@@ -138,26 +120,113 @@ public class LockModeTest extends BaseCoreFunctionalTestCase {
 			// that initial transaction is still active and so the lock should still be held.
 			// Lets open another session/transaction and verify that we cannot update the row
 			nowAttemptToUpdateRow();
-		}
-		finally {
-			s1.getTransaction().commit();
-			s1.close();
-		}
+		} );
 	}
 
 	@Test
 	public void testQueryUsingLockOptions() {
 		// todo : need an association here to make sure the alias-specific lock modes are applied correctly
-		Session s1 = sessionFactory().openSession();
-		s1.beginTransaction();
-		s1.createQuery( "from A a" )
-				.setLockOptions( new LockOptions( LockMode.PESSIMISTIC_WRITE ) )
-				.uniqueResult();
-		s1.createQuery( "from A a" )
-				.setLockOptions( new LockOptions().setAliasSpecificLockMode( "a", LockMode.PESSIMISTIC_WRITE ) )
-				.uniqueResult();
-		s1.getTransaction().commit();
-		s1.close();
+		doInHibernate( this::sessionFactory, session -> {
+			session.createQuery( "from A a" )
+					.setLockOptions( new LockOptions( LockMode.PESSIMISTIC_WRITE ) )
+					.uniqueResult();
+			session.createQuery( "from A a" )
+					.setLockOptions( new LockOptions().setAliasSpecificLockMode( "a", LockMode.PESSIMISTIC_WRITE ) )
+					.uniqueResult();
+		} );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-2735")
+	public void testQueryLockModeNoneWithAlias() {
+		doInHibernate( this::sessionFactory, session -> {
+			// shouldn't throw an exception
+			session.createQuery( "SELECT a.value FROM A a where a.id = :id" )
+					.setLockMode( "a", LockMode.NONE )
+					.setParameter( "id", id )
+					.list();
+		} );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-2735")
+	public void testQueryLockModePessimisticWriteWithAlias() {
+		doInHibernate( this::sessionFactory, session -> {
+			// shouldn't throw an exception
+			session.createQuery( "SELECT MAX(a.id)+1 FROM A a where a.value = :value" )
+					.setLockMode( "a", LockMode.PESSIMISTIC_WRITE )
+					.setParameter( "value", "it" )
+					.list();
+		} );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-12257")
+	public void testRefreshLockedEntity() {
+		doInHibernate( this::sessionFactory, session -> {
+			A a = session.get( A.class, id, LockMode.PESSIMISTIC_READ );
+			checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+			session.refresh( a );
+			checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+			session.refresh( A.class.getName(), a );
+			checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+			session.refresh( a, Collections.emptyMap() );
+			checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+			session.refresh( a, null, Collections.emptyMap() );
+			checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+		} );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-12257")
+	public void testRefreshWithExplicitLowerLevelLockMode() {
+		doInHibernate( this::sessionFactory, session -> {
+						   A a = session.get( A.class, id, LockMode.PESSIMISTIC_READ );
+						   checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+						   session.refresh( a, LockMode.READ );
+						   checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+						   session.refresh( a, LockModeType.READ );
+						   checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+						   session.refresh( a, LockModeType.READ, Collections.emptyMap() );
+						   checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+					   } );
+	}
+
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-12257")
+	public void testRefreshWithExplicitHigherLevelLockMode() {
+		doInHibernate( this::sessionFactory, session -> {
+						   A a = session.get( A.class, id );
+						   checkLockMode( a, LockMode.READ, session );
+						   session.refresh( a, LockMode.UPGRADE_NOWAIT );
+						   checkLockMode( a, LockMode.UPGRADE_NOWAIT, session );
+						   session.refresh( a, LockModeType.PESSIMISTIC_READ );
+						   checkLockMode( a, LockMode.PESSIMISTIC_READ, session );
+						   session.refresh( a, LockModeType.PESSIMISTIC_WRITE, Collections.emptyMap() );
+						   checkLockMode( a, LockMode.PESSIMISTIC_WRITE, session );
+					   } );
+	}
+
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-12257")
+	public void testRefreshAfterUpdate() {
+		doInHibernate( this::sessionFactory, session -> {
+			A a = session.get( A.class, id );
+			checkLockMode( a, LockMode.READ, session );
+			a.setValue( "new value" );
+			session.flush();
+			checkLockMode( a, LockMode.WRITE, session );
+			session.refresh( a );
+			checkLockMode( a, LockMode.WRITE, session );
+		} );
+	}
+
+	private void checkLockMode(Object entity, LockMode expectedLockMode, Session session) {
+		final LockMode lockMode =
+				( (SharedSessionContractImplementor) session ).getPersistenceContext().getEntry( entity ).getLockMode();
+		assertEquals( expectedLockMode, lockMode );
 	}
 
 	private void nowAttemptToUpdateRow() {
@@ -170,63 +239,51 @@ public class LockModeTest extends BaseCoreFunctionalTestCase {
 		// To be able to cater to the second type, we run this block in a separate thread to be able to "time it out"
 
 		try {
-			new TimedExecutor( 10*1000, 1*1000 ).execute(
-					new Executable() {
-						Session s;
-
-						@Override
-						public void execute() {
-							s = sessionFactory().openSession();
-							s.beginTransaction();
-							try {
-								// load with write lock to deal with databases that block (wait indefinitely) direct attempts
-								// to write a locked row
-								A it = (A) s.get(
-										A.class,
-										id,
-										new LockOptions( LockMode.PESSIMISTIC_WRITE ).setTimeOut( LockOptions.NO_WAIT )
-								);
-								it.setValue( "changed" );
-								s.flush();
-								fail( "Pessimistic lock not obtained/held" );
-							}
-							catch ( Exception e ) {
-								// grr, exception can be any number of types based on database
-								// 		see HHH-6887
-								if ( LockAcquisitionException.class.isInstance( e )
-										|| GenericJDBCException.class.isInstance( e )
-										|| PessimisticLockException.class.isInstance( e ) ) {
-									// "ok"
-								}
-								else {
-									fail( "Unexpected error type testing pessimistic locking : " + e.getClass().getName() );
-								}
-							}
-							finally {
-								shutDown();
-							}
-						}
-
-						private void shutDown() {
-							try {
-								s.getTransaction().rollback();
-								s.close();
-							}
-							catch (Exception ignore) {
-							}
-							s = null;
-						}
-
-						@Override
-						public void timedOut() {
-							s.cancelQuery();
-							shutDown();
+			executeSync( () -> {
+				doInHibernate( this::sessionFactory, _session -> {
+					TransactionUtil.setJdbcTimeout( _session );
+					try {
+						// We used to load with write lock here to deal with databases that block (wait indefinitely)
+						// direct attempts to write a locked row.
+						// At some point, due to a bug, the lock mode was lost when applied via lock options, leading
+						// this code to not apply the pessimistic write lock.
+						// See HHH-12847 + https://github.com/hibernate/hibernate-orm/commit/719e5d0c12a6ef709bee907b8b651d27b8b08a6a.
+						// At least Sybase waits indefinitely when really applying a PESSIMISTIC_WRITE lock here (and
+						// the NO_WAIT part is not applied by the Sybase dialect so it doesn't help).
+						// For now going back to LockMode.NONE as it's the lock mode that has been applied for quite
+						// some time and it seems our supported databases don't have a problem with it.
+						A it = _session.get(
+								A.class,
+								id,
+								new LockOptions( LockMode.NONE ).setTimeOut( LockOptions.NO_WAIT )
+						);
+						_session.createNativeQuery( updateStatement() )
+								.setParameter( "value", "changed" )
+								.setParameter( "id", it.getId() )
+								.executeUpdate();
+						fail( "Pessimistic lock not obtained/held" );
+					}
+					catch ( Exception e ) {
+						if ( !ExceptionUtil.isSqlLockTimeout( e) ) {
+							fail( "Unexpected error type testing pessimistic locking : " + e.getClass().getName() );
 						}
 					}
-			);
+				} );
+			} );
 		}
-		catch (TimeoutException e) {
-			// timeout is ok, see rule #2 above
+		catch (Exception e) {
+			//MariaDB throws a time out nd closes the underlying connection
+			if( !ExceptionUtil.isConnectionClose(e)) {
+				fail("Unknown exception thrown: " + e.getMessage());
+			}
 		}
+	}
+
+	protected String updateStatement() {
+		if ( SQLServerDialect.class.isAssignableFrom( DIALECT.getClass() )
+				|| SybaseDialect.class.isAssignableFrom( DIALECT.getClass() ) ) {
+			return "UPDATE T_LOCK_A WITH(NOWAIT) SET a_value = :value where id = :id";
+		}
+		return "UPDATE T_LOCK_A SET a_value = :value where id = :id";
 	}
 }

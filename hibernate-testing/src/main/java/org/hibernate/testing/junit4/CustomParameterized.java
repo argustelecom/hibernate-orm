@@ -6,16 +6,6 @@
  */
 package org.hibernate.testing.junit4;
 
-import org.junit.runner.Runner;
-import org.junit.runner.manipulation.NoTestsRemainException;
-import org.junit.runner.notification.RunNotifier;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Suite;
-import org.junit.runners.model.FrameworkField;
-import org.junit.runners.model.FrameworkMethod;
-import org.junit.runners.model.InitializationError;
-import org.junit.runners.model.Statement;
-
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -29,6 +19,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.SortedMap;
 import java.util.TreeMap;
+
+import org.junit.runner.Runner;
+import org.junit.runner.manipulation.NoTestsRemainException;
+import org.junit.runner.notification.RunNotifier;
+import org.junit.runners.Parameterized;
+import org.junit.runners.Suite;
+import org.junit.runners.model.FrameworkField;
+import org.junit.runners.model.FrameworkMethod;
+import org.junit.runners.model.InitializationError;
+import org.junit.runners.model.Statement;
 
 /**
  * Allows the {@link CustomRunner} features in parameterized tests.
@@ -136,7 +136,7 @@ public class CustomParameterized extends Suite {
 		for (FrameworkMethod each : methods) {
 			if (each.isPublic()) {
 				if (!each.isStatic()) {
-					if (getTestClass().getOnlyConstructor().getParameterTypes().length != 0) {
+					if (getTestClass().getOnlyConstructor().getParameterCount() != 0) {
 						throw new Exception("Method " + each.getMethod() + " is annotated with @Parameters, it is not static and there is no parameter-less constructor!");
 					}
 				}

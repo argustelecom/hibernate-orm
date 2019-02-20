@@ -22,11 +22,11 @@ import org.hibernate.IrrelevantEntity;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.boot.MetadataSources;
-import org.hibernate.boot.internal.AttributeConverterDescriptorNonAutoApplicableImpl;
+import org.hibernate.boot.internal.ClassmateContext;
+import org.hibernate.boot.model.convert.internal.InstanceBasedConverterDescriptor;
 import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.boot.spi.MetadataImplementor;
-import org.hibernate.cfg.AttributeConverterDefinition;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
@@ -43,7 +43,9 @@ import org.hibernate.type.descriptor.java.EnumJavaTypeDescriptor;
 import org.hibernate.type.descriptor.java.StringTypeDescriptor;
 
 import org.hibernate.testing.TestForIssue;
+import org.hibernate.testing.boot.MetadataBuildingContextTestingImpl;
 import org.hibernate.testing.junit4.BaseUnitTestCase;
+import org.hibernate.testing.util.ExceptionUtil;
 import org.junit.Test;
 
 import static org.hibernate.testing.junit4.ExtraAssertions.assertTyping;
@@ -66,8 +68,7 @@ public class AttributeConverterTest extends BaseUnitTestCase {
 			fail( "expecting an exception" );
 		}
 		catch (AnnotationException e) {
-			assertNotNull( e.getCause() );
-			assertTyping( BlewUpException.class, e.getCause() );
+			assertTyping( BlewUpException.class, ExceptionUtil.rootCause( e ) );
 		}
 	}
 
@@ -92,28 +93,24 @@ public class AttributeConverterTest extends BaseUnitTestCase {
 
 	@Test
 	public void testBasicOperation() {
-		final StandardServiceRegistry ssr = new StandardServiceRegistryBuilder().build();
 
-		try {
-			MetadataImplementor metadata = (MetadataImplementor) new MetadataSources( ssr ).buildMetadata();
-			SimpleValue simpleValue = new SimpleValue( metadata );
-			simpleValue.setJpaAttributeConverterDescriptor(
-					new AttributeConverterDescriptorNonAutoApplicableImpl( new StringClobConverter() )
-			);
-			simpleValue.setTypeUsingReflection( IrrelevantEntity.class.getName(), "name" );
+		SimpleValue simpleValue = new SimpleValue( new MetadataBuildingContextTestingImpl() );
+		simpleValue.setJpaAttributeConverterDescriptor(
+				new InstanceBasedConverterDescriptor(
+						new StringClobConverter(),
+						new ClassmateContext()
+				)
+		);
+		simpleValue.setTypeUsingReflection( IrrelevantEntity.class.getName(), "name" );
 
-			Type type = simpleValue.getType();
-			assertNotNull( type );
-			if ( !AttributeConverterTypeAdapter.class.isInstance( type ) ) {
-				fail( "AttributeConverter not applied" );
-			}
-			AbstractStandardBasicType basicType = assertTyping( AbstractStandardBasicType.class, type );
-			assertSame( StringTypeDescriptor.INSTANCE, basicType.getJavaTypeDescriptor() );
-			assertEquals( Types.CLOB, basicType.getSqlTypeDescriptor().getSqlType() );
+		Type type = simpleValue.getType();
+		assertNotNull( type );
+		if ( !AttributeConverterTypeAdapter.class.isInstance( type ) ) {
+			fail( "AttributeConverter not applied" );
 		}
-		finally {
-			StandardServiceRegistryBuilder.destroy( ssr );
-		}
+		AbstractStandardBasicType basicType = assertTyping( AbstractStandardBasicType.class, type );
+		assertSame( StringTypeDescriptor.INSTANCE, basicType.getJavaTypeDescriptor() );
+		assertEquals( Types.CLOB, basicType.getSqlTypeDescriptor().getSqlType() );
 	}
 
 	@Test

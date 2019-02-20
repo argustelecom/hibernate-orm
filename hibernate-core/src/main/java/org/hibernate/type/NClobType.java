@@ -8,11 +8,11 @@ package org.hibernate.type;
 
 import java.sql.NClob;
 
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.type.descriptor.java.NClobTypeDescriptor;
 
 /**
- * A type that maps between {@link java.sql.Types#CLOB CLOB} and {@link java.sql.Clob}
+ * A type that maps between {@link java.sql.Types#NCLOB NCLOB} and {@link java.sql.NClob}
  *
  * @author Gavin King
  * @author Steve Ebersole
@@ -24,6 +24,7 @@ public class NClobType extends AbstractSingleColumnStandardBasicType<NClob> {
 		super( org.hibernate.type.descriptor.sql.NClobTypeDescriptor.DEFAULT, NClobTypeDescriptor.INSTANCE );
 	}
 
+	@Override
 	public String getName() {
 		return "nclob";
 	}
@@ -34,8 +35,7 @@ public class NClobType extends AbstractSingleColumnStandardBasicType<NClob> {
 	}
 
 	@Override
-	protected NClob getReplacement(NClob original, NClob target, SessionImplementor session) {
-		return session.getFactory().getDialect().getLobMergeStrategy().mergeNClob( original, target, session );
+	protected NClob getReplacement(NClob original, NClob target, SharedSessionContractImplementor session) {
+		return session.getJdbcServices().getJdbcEnvironment().getDialect().getLobMergeStrategy().mergeNClob( original, target, session );
 	}
-
 }

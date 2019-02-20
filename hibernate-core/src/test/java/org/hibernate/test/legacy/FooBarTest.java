@@ -6,13 +6,6 @@
  */
 package org.hibernate.test.legacy;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 import java.io.Serializable;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -48,26 +41,25 @@ import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.TransactionException;
 import org.hibernate.action.spi.BeforeTransactionCompletionProcess;
-import org.hibernate.cfg.Configuration;
 import org.hibernate.criterion.Example;
 import org.hibernate.criterion.MatchMode;
 import org.hibernate.criterion.Order;
 import org.hibernate.criterion.Restrictions;
+import org.hibernate.dialect.AbstractHANADialect;
 import org.hibernate.dialect.DB2Dialect;
 import org.hibernate.dialect.DerbyDialect;
 import org.hibernate.dialect.H2Dialect;
-import org.hibernate.dialect.AbstractHANADialect;
 import org.hibernate.dialect.HSQLDialect;
 import org.hibernate.dialect.InterbaseDialect;
 import org.hibernate.dialect.MckoiDialect;
 import org.hibernate.dialect.MySQLDialect;
+import org.hibernate.dialect.Oracle12cDialect;
 import org.hibernate.dialect.Oracle8iDialect;
 import org.hibernate.dialect.PointbaseDialect;
 import org.hibernate.dialect.PostgreSQL81Dialect;
 import org.hibernate.dialect.PostgreSQLDialect;
 import org.hibernate.dialect.SAPDBDialect;
-import org.hibernate.dialect.Sybase11Dialect;
-import org.hibernate.dialect.SybaseASE15Dialect;
+import org.hibernate.dialect.SQLServerDialect;
 import org.hibernate.dialect.SybaseDialect;
 import org.hibernate.dialect.TeradataDialect;
 import org.hibernate.dialect.TimesTenDialect;
@@ -79,19 +71,27 @@ import org.hibernate.internal.util.collections.JoinedIterator;
 import org.hibernate.jdbc.AbstractReturningWork;
 import org.hibernate.jdbc.AbstractWork;
 import org.hibernate.proxy.HibernateProxy;
+import org.hibernate.type.StandardBasicTypes;
+
 import org.hibernate.testing.DialectChecks;
-import org.hibernate.testing.FailureExpected;
 import org.hibernate.testing.RequiresDialect;
 import org.hibernate.testing.RequiresDialectFeature;
 import org.hibernate.testing.SkipForDialect;
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.env.ConnectionProviderBuilder;
-import org.hibernate.type.StandardBasicTypes;
-import org.jboss.logging.Logger;
 import org.junit.Test;
 
+import org.jboss.logging.Logger;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+@RequiresDialectFeature(DialectChecks.SupportsNoColumnInsert.class)
 public class FooBarTest extends LegacyTestCase {
-	private static final Logger log = Logger.getLogger( FooBarTest.class );
 
 	@Override
 	public String[] getMappings() {
@@ -1376,6 +1376,7 @@ public class FooBarTest extends LegacyTestCase {
 	}
 
 	@Test
+	@SkipForDialect( value = H2Dialect.class, comment = "Feature not supported: MVCC=TRUE && FOR UPDATE && JOIN")
 	public void testQueryLockMode() throws Exception {
 		Session s = openSession();
 		Transaction tx = s.beginTransaction();
@@ -1646,7 +1647,7 @@ public class FooBarTest extends LegacyTestCase {
 			count++;
 		}
 		assertEquals(4, count);
-		iter = s.createQuery("select distinct foo from Foo foo")
+		iter = s.createQuery("select foo from Foo foo")
 			.setMaxResults(2)
 			.setFirstResult(2)
 			.list()
@@ -1657,7 +1658,7 @@ public class FooBarTest extends LegacyTestCase {
 			count++;
 		}
 		assertTrue(count==2);
-		iter = s.createQuery("select distinct foo from Foo foo")
+		iter = s.createQuery("select foo from Foo foo")
 		.setMaxResults(3)
 		.list()
 		.iterator();
@@ -1768,8 +1769,9 @@ public class FooBarTest extends LegacyTestCase {
 
 		try {
 			q.setParameterList("nameList", (Collection)null);
-			fail("Should throw an queryexception when passing a null!");
-		} catch (QueryException qe) {
+			fail("Should throw a QueryException when passing a null!");
+		}
+		catch (IllegalArgumentException qe) {
 			//should happen
 		}
 
@@ -2286,7 +2288,12 @@ public class FooBarTest extends LegacyTestCase {
 			s.createQuery( "select count(*) from Baz as baz where 1 in indices(baz.fooArray)" ).list();
 			s.createQuery( "select count(*) from Bar as bar where 'abc' in elements(bar.baz.fooArray)" ).list();
 			s.createQuery( "select count(*) from Bar as bar where 1 in indices(bar.baz.fooArray)" ).list();
-			if ( !(getDialect() instanceof DB2Dialect) &&  !(getDialect() instanceof Oracle8iDialect ) && !( getDialect() instanceof SybaseDialect ) && !( getDialect() instanceof Sybase11Dialect ) && !( getDialect() instanceof SybaseASE15Dialect ) && !( getDialect() instanceof PostgreSQLDialect ) && !(getDialect() instanceof PostgreSQL81Dialect) && !(getDialect() instanceof AbstractHANADialect)) {
+			if ( !(getDialect() instanceof DB2Dialect) &&
+					!( getDialect() instanceof Oracle8iDialect ) &&
+					!( SybaseDialect.class.isAssignableFrom( getDialect().getClass() ) ) &&
+					!( SQLServerDialect.class.isAssignableFrom( getDialect().getClass() ) ) &&
+					!( getDialect() instanceof PostgreSQLDialect ) && !(getDialect() instanceof PostgreSQL81Dialect ) &&
+					!( getDialect() instanceof AbstractHANADialect) ) {
 				// SybaseAnywhereDialect supports implicit conversions from strings to ints
 				s.createQuery(
 						"select count(*) from Bar as bar, bar.component.glarch.proxyArray as g where g.id in indices(bar.baz.fooArray)"
@@ -2514,7 +2521,9 @@ public class FooBarTest extends LegacyTestCase {
 			).list();
 			assertTrue( "collection.elements find", list.size()==2 );
 		}
-		if (!(getDialect() instanceof SAPDBDialect) ) { // SAPDB doesn't like distinct with binary type
+		// SAPDB doesn't like distinct with binary type
+		// Oracle12cDialect stores binary types as blobs and do no support distinct on blobs
+		if ( !(getDialect() instanceof SAPDBDialect) && !(getDialect() instanceof Oracle12cDialect) ) {
 			List list = s.createQuery( "select distinct foo from Baz baz join baz.fooArray foo" ).list();
 			assertTrue( "collection.elements find", list.size()==2 );
 		}
@@ -4024,6 +4033,7 @@ public class FooBarTest extends LegacyTestCase {
 	}
 
 	@SkipForDialect(value = AbstractHANADialect.class, comment = "HANA currently requires specifying table name by 'FOR UPDATE of t1.c1' if there are more than one tables/views/subqueries in the FROM clause")
+	@SkipForDialect( value = H2Dialect.class, comment = "Feature not supported: MVCC=TRUE && FOR UPDATE && JOIN")
 	@Test
 	public void testNewSessionLifecycle() throws Exception {
 		Session s = openSession();
@@ -4052,6 +4062,7 @@ public class FooBarTest extends LegacyTestCase {
 		}
 		catch (Exception e) {
 			s.getTransaction().rollback();
+			throw e;
 		}
 		finally {
 			s.close();
@@ -4303,6 +4314,7 @@ public class FooBarTest extends LegacyTestCase {
 	}
 
 	@SkipForDialect(value = AbstractHANADialect.class, comment = "HANA currently requires specifying table name by 'FOR UPDATE of t1.c1' if there are more than one tables/views/subqueries in the FROM clause")
+	@SkipForDialect( value = H2Dialect.class, comment = "Feature not supported: MVCC=TRUE && FOR UPDATE && JOIN")
 	@Test
 	public void testRefresh() throws Exception {
 		final Session s = openSession();
@@ -4322,7 +4334,10 @@ public class FooBarTest extends LegacyTestCase {
 		);
 		s.refresh(foo);
 		assertEquals( Long.valueOf( -3l ), foo.getLong() );
-		assertEquals( LockMode.READ, s.getCurrentLockMode( foo ) );
+		// NOTE : this test used to test for LockMode.READ here, but that actually highlights a bug
+		//		`foo` has just been inserted and then updated in this same Session - its lock mode
+		//		therefore ought to be WRITE.  See https://hibernate.atlassian.net/browse/HHH-12257
+		assertEquals( LockMode.WRITE, s.getCurrentLockMode( foo ) );
 		s.refresh(foo, LockMode.UPGRADE);
 		if ( getDialect().supportsOuterJoinForUpdate() ) {
 			assertEquals( LockMode.UPGRADE, s.getCurrentLockMode( foo ) );

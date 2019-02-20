@@ -6,6 +6,9 @@
  */
 package org.hibernate.annotations;
 
+import org.hibernate.engine.spi.QueryParameters;
+import org.hibernate.graph.GraphSemantic;
+
 /**
  * Consolidation of hints available to Hibernate JPA queries.  Mainly used to define features available on
  * Hibernate queries that have no corollary in JPA queries.
@@ -107,14 +110,38 @@ public class QueryHints {
 	 * 
 	 * Note: Currently, attributes that are not specified are treated as FetchType.LAZY or FetchType.EAGER depending
 	 * on the attribute's definition in metadata, rather than forcing FetchType.LAZY.
+	 *
+	 * @deprecated (since 5.4) Use {@link GraphSemantic#FETCH}'s {@link GraphSemantic#getJpaHintName()} instead
 	 */
-	public static final String FETCHGRAPH = "javax.persistence.fetchgraph";
+	@Deprecated
+	public static final String FETCHGRAPH = GraphSemantic.FETCH.getJpaHintName();
 	
 	/**
 	 * Hint providing a "loadgraph" EntityGraph.  Attributes explicitly specified as AttributeNodes are treated as
 	 * FetchType.EAGER (via join fetch or subsequent select).  Attributes that are not specified are treated as
 	 * FetchType.LAZY or FetchType.EAGER depending on the attribute's definition in metadata
+	 *
+	 * @deprecated (since 5.4) Use {@link GraphSemantic#LOAD}'s {@link GraphSemantic#getJpaHintName()} instead
 	 */
-	public static final String LOADGRAPH = "javax.persistence.loadgraph";
+	@Deprecated
+	public static final String LOADGRAPH = GraphSemantic.LOAD.getJpaHintName();
+
+	/**
+	 * Hint to enable/disable the follow-on-locking mechanism provided by {@link org.hibernate.dialect.Dialect#useFollowOnLocking(QueryParameters)}.
+	 * A value of {@code true} enables follow-on-locking, whereas a value of {@code false} disables it.
+	 * If the value is {@code null}, the the {@code Dialect} strategy is going to be used instead.
+	 *
+	 * @since 5.2
+	 */
+	public static final String FOLLOW_ON_LOCKING = "hibernate.query.followOnLocking";
+
+	/**
+	 * Hint to enable/disable the pass-distinct-through mechanism.
+	 * A value of {@code true} enables pass-distinct-through, whereas a value of {@code false} disables it.
+	 * When the pass-distinct-through is disabled, the HQL and JPQL distinct clause is no longer passed to the SQL statement.
+	 *
+	 * @since 5.2
+	 */
+	public static final String PASS_DISTINCT_THROUGH = "hibernate.query.passDistinctThrough";
 
 }

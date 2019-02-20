@@ -20,9 +20,13 @@ import org.hibernate.boot.registry.selector.StrategyRegistration;
 import org.hibernate.boot.registry.selector.StrategyRegistrationProvider;
 import org.hibernate.boot.registry.selector.spi.StrategySelectionException;
 import org.hibernate.boot.registry.selector.spi.StrategySelector;
+import org.hibernate.cache.internal.DefaultCacheKeysFactory;
+import org.hibernate.cache.internal.SimpleCacheKeysFactory;
+import org.hibernate.cache.spi.CacheKeysFactory;
 import org.hibernate.dialect.CUBRIDDialect;
 import org.hibernate.dialect.Cache71Dialect;
 import org.hibernate.dialect.DB2390Dialect;
+import org.hibernate.dialect.DB2390V8Dialect;
 import org.hibernate.dialect.DB2400Dialect;
 import org.hibernate.dialect.DB2Dialect;
 import org.hibernate.dialect.DerbyTenFiveDialect;
@@ -32,6 +36,8 @@ import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.FirebirdDialect;
 import org.hibernate.dialect.FrontBaseDialect;
 import org.hibernate.dialect.H2Dialect;
+import org.hibernate.dialect.HANAColumnStoreDialect;
+import org.hibernate.dialect.HANARowStoreDialect;
 import org.hibernate.dialect.HSQLDialect;
 import org.hibernate.dialect.InformixDialect;
 import org.hibernate.dialect.Ingres10Dialect;
@@ -41,7 +47,9 @@ import org.hibernate.dialect.InterbaseDialect;
 import org.hibernate.dialect.JDataStoreDialect;
 import org.hibernate.dialect.MckoiDialect;
 import org.hibernate.dialect.MimerSQLDialect;
+import org.hibernate.dialect.MySQL57Dialect;
 import org.hibernate.dialect.MySQL57InnoDBDialect;
+import org.hibernate.dialect.MySQL8Dialect;
 import org.hibernate.dialect.MySQL5Dialect;
 import org.hibernate.dialect.MySQL5InnoDBDialect;
 import org.hibernate.dialect.Oracle10gDialect;
@@ -63,6 +71,7 @@ import org.hibernate.dialect.SybaseASE15Dialect;
 import org.hibernate.dialect.SybaseAnywhereDialect;
 import org.hibernate.dialect.TeradataDialect;
 import org.hibernate.dialect.TimesTenDialect;
+import org.hibernate.engine.transaction.jta.platform.internal.AtomikosJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.BitronixJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.BorlandEnterpriseServerJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.JBossAppServerJtaPlatform;
@@ -73,9 +82,11 @@ import org.hibernate.engine.transaction.jta.platform.internal.JRun4JtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.OC4JJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.OrionJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.ResinJtaPlatform;
+import org.hibernate.engine.transaction.jta.platform.internal.SapNetWeaverJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.SunOneJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.WebSphereExtendedJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.WebSphereJtaPlatform;
+import org.hibernate.engine.transaction.jta.platform.internal.WebSphereLibertyJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.internal.WeblogicJtaPlatform;
 import org.hibernate.engine.transaction.jta.platform.spi.JtaPlatform;
 import org.hibernate.event.internal.EntityCopyAllowedLoggedObserver;
@@ -86,9 +97,9 @@ import org.hibernate.hql.spi.id.MultiTableBulkIdStrategy;
 import org.hibernate.hql.spi.id.global.GlobalTemporaryTableBulkIdStrategy;
 import org.hibernate.hql.spi.id.local.LocalTemporaryTableBulkIdStrategy;
 import org.hibernate.hql.spi.id.persistent.PersistentTableBulkIdStrategy;
-import org.hibernate.resource.transaction.TransactionCoordinatorBuilder;
 import org.hibernate.resource.transaction.backend.jdbc.internal.JdbcResourceLocalTransactionCoordinatorBuilderImpl;
 import org.hibernate.resource.transaction.backend.jta.internal.JtaTransactionCoordinatorBuilderImpl;
+import org.hibernate.resource.transaction.spi.TransactionCoordinatorBuilder;
 
 import org.jboss.logging.Logger;
 
@@ -155,8 +166,8 @@ public class StrategySelectorBuilder {
 		addJtaPlatforms( strategySelector );
 		addTransactionCoordinatorBuilders( strategySelector );
 		addMultiTableBulkIdStrategies( strategySelector );
-		addEntityCopyObserverStrategies( strategySelector );
 		addImplicitNamingStrategies( strategySelector );
+		addCacheKeysFactories( strategySelector );
 
 		// apply auto-discovered registrations
 		for ( StrategyRegistrationProvider provider : classLoaderService.loadJavaServices( StrategyRegistrationProvider.class ) ) {
@@ -189,6 +200,7 @@ public class StrategySelectorBuilder {
 		addDialect( strategySelector, CUBRIDDialect.class );
 		addDialect( strategySelector, DB2Dialect.class );
 		addDialect( strategySelector, DB2390Dialect.class );
+		addDialect( strategySelector, DB2390V8Dialect.class );
 		addDialect( strategySelector, DB2400Dialect.class );
 		addDialect( strategySelector, DerbyTenFiveDialect.class );
 		addDialect( strategySelector, DerbyTenSixDialect.class );
@@ -196,6 +208,8 @@ public class StrategySelectorBuilder {
 		addDialect( strategySelector, FirebirdDialect.class );
 		addDialect( strategySelector, FrontBaseDialect.class );
 		addDialect( strategySelector, H2Dialect.class );
+		addDialect( strategySelector, HANAColumnStoreDialect.class );
+		addDialect( strategySelector, HANARowStoreDialect.class );
 		addDialect( strategySelector, HSQLDialect.class );
 		addDialect( strategySelector, InformixDialect.class );
 		addDialect( strategySelector, IngresDialect.class );
@@ -208,6 +222,8 @@ public class StrategySelectorBuilder {
 		addDialect( strategySelector, MySQL5Dialect.class );
 		addDialect( strategySelector, MySQL5InnoDBDialect.class );
 		addDialect( strategySelector, MySQL57InnoDBDialect.class );
+		addDialect( strategySelector, MySQL57Dialect.class );
+		addDialect( strategySelector, MySQL8Dialect.class );
 		addDialect( strategySelector, Oracle8iDialect.class );
 		addDialect( strategySelector, Oracle9iDialect.class );
 		addDialect( strategySelector, Oracle10gDialect.class );
@@ -238,6 +254,13 @@ public class StrategySelectorBuilder {
 	}
 
 	private void addJtaPlatforms(StrategySelectorImpl strategySelector) {
+		addJtaPlatforms(
+				strategySelector,
+				AtomikosJtaPlatform.class,
+				"Atomikos",
+				"org.hibernate.service.jta.platform.internal.AtomikosJtaPlatform"
+		);
+
 		addJtaPlatforms(
 				strategySelector,
 				BorlandEnterpriseServerJtaPlatform.class,
@@ -310,6 +333,13 @@ public class StrategySelectorBuilder {
 
 		addJtaPlatforms(
 				strategySelector,
+				SapNetWeaverJtaPlatform.class,
+				"SapNetWeaver",
+				"org.hibernate.service.jta.platform.internal.SapNetWeaverJtaPlatform"
+		);
+
+		addJtaPlatforms(
+				strategySelector,
 				SunOneJtaPlatform.class,
 				"SunOne",
 				"org.hibernate.service.jta.platform.internal.SunOneJtaPlatform"
@@ -320,6 +350,13 @@ public class StrategySelectorBuilder {
 				WeblogicJtaPlatform.class,
 				"Weblogic",
 				"org.hibernate.service.jta.platform.internal.WeblogicJtaPlatform"
+		);
+		
+		addJtaPlatforms(
+				strategySelector,
+				WebSphereLibertyJtaPlatform.class,
+				"WebSphereLiberty",
+				"org.hibernate.engine.transaction.jta.platform.internal.WebSphereLibertyJtaPlatform"
 		);
 
 		addJtaPlatforms(
@@ -391,24 +428,6 @@ public class StrategySelectorBuilder {
 		);
 	}
 
-	private void addEntityCopyObserverStrategies(StrategySelectorImpl strategySelector) {
-		strategySelector.registerStrategyImplementor(
-				EntityCopyObserver.class,
-				EntityCopyNotAllowedObserver.SHORT_NAME,
-				EntityCopyNotAllowedObserver.class
-		);
-		strategySelector.registerStrategyImplementor(
-				EntityCopyObserver.class,
-				EntityCopyAllowedObserver.SHORT_NAME,
-				EntityCopyAllowedObserver.class
-		);
-		strategySelector.registerStrategyImplementor(
-				EntityCopyObserver.class,
-				EntityCopyAllowedLoggedObserver.SHORT_NAME,
-				EntityCopyAllowedLoggedObserver.class
-		);
-	}
-
 	private void addImplicitNamingStrategies(StrategySelectorImpl strategySelector) {
 		strategySelector.registerStrategyImplementor(
 				ImplicitNamingStrategy.class,
@@ -434,6 +453,19 @@ public class StrategySelectorBuilder {
 				ImplicitNamingStrategy.class,
 				"component-path",
 				ImplicitNamingStrategyComponentPathImpl.class
+		);
+	}
+
+	private void addCacheKeysFactories(StrategySelectorImpl strategySelector) {
+		strategySelector.registerStrategyImplementor(
+			CacheKeysFactory.class,
+			DefaultCacheKeysFactory.SHORT_NAME,
+			DefaultCacheKeysFactory.class
+		);
+		strategySelector.registerStrategyImplementor(
+			CacheKeysFactory.class,
+			SimpleCacheKeysFactory.SHORT_NAME,
+			SimpleCacheKeysFactory.class
 		);
 	}
 }

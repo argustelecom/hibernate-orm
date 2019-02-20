@@ -6,11 +6,12 @@
  */
 package org.hibernate.envers.internal.tools;
 
-import javassist.util.proxy.ProxyFactory;
+import java.util.Objects;
 
 import org.hibernate.Session;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.proxy.HibernateProxy;
 
@@ -22,7 +23,7 @@ public abstract class EntityTools {
 		final Object id1 = getIdentifier( session, entityName, obj1 );
 		final Object id2 = getIdentifier( session, entityName, obj2 );
 
-		return Tools.objectsEqual( id1, id2 );
+		return Objects.deepEquals( id1, id2 );
 	}
 
 	public static Object getIdentifier(SessionImplementor session, String entityName, Object obj) {
@@ -43,7 +44,7 @@ public abstract class EntityTools {
 			return proxy.getHibernateLazyInitializer().getImplementation();
 		}
 
-		final SessionImplementor sessionImplementor = proxy.getHibernateLazyInitializer().getSession();
+		final SharedSessionContractImplementor sessionImplementor = proxy.getHibernateLazyInitializer().getSession();
 		final Session tempSession = sessionImplementor == null
 				? sessionFactoryImplementor.openTemporarySession()
 				: sessionImplementor.getFactory().openTemporarySession();
@@ -75,7 +76,7 @@ public abstract class EntityTools {
 		if ( clazz == null ) {
 			return null;
 		}
-		else if ( ProxyFactory.isProxyClass( clazz ) ) {
+		else if ( HibernateProxy.class.isAssignableFrom( clazz ) ) {
 			// Get the source class of Javassist proxy instance.
 			return (Class<T>) clazz.getSuperclass();
 		}
@@ -85,8 +86,8 @@ public abstract class EntityTools {
 	/**
 	 * @return Java class mapped to specified entity name.
 	 */
-	public static Class getEntityClass(SessionImplementor sessionImplementor, Session session, String entityName) {
-		final EntityPersister entityPersister = sessionImplementor.getFactory().getEntityPersister( entityName );
+	public static Class getEntityClass(SessionImplementor sessionImplementor, String entityName) {
+		final EntityPersister entityPersister = sessionImplementor.getFactory().getMetamodel().entityPersister( entityName );
 		return entityPersister.getMappedClass();
 	}
 }

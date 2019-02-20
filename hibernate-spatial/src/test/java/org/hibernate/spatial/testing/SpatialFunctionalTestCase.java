@@ -12,8 +12,6 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 
-import com.vividsolutions.jts.geom.Geometry;
-
 import org.hibernate.Query;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
@@ -22,9 +20,12 @@ import org.hibernate.service.ServiceRegistry;
 import org.hibernate.spatial.HSMessageLogger;
 import org.hibernate.spatial.SpatialDialect;
 import org.hibernate.spatial.SpatialFunction;
+import org.hibernate.spatial.integration.jts.JtsGeomEntity;
 
 import org.hibernate.testing.AfterClassOnce;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
+
+import org.locationtech.jts.geom.Geometry;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -33,7 +34,7 @@ import static org.junit.Assert.fail;
 
 /**
  * @author Karel Maesen, Geovise BVBA
- *         creation-date: Sep 30, 2010
+ * creation-date: Sep 30, 2010
  */
 public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCase {
 
@@ -42,7 +43,7 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 
 	protected TestData testData;
 	protected DataSourceUtils dataSourceUtils;
-	protected GeometryEquality geometryEquality;
+	protected JTSGeometryEquality geometryEquality;
 	protected AbstractExpectationsFactory expectationsFactory;
 
 	/**
@@ -52,10 +53,10 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 		try {
 			dataSourceUtils.insertTestData( testData );
 		}
-		catch ( BatchUpdateException e ) {
+		catch (BatchUpdateException e) {
 			throw new RuntimeException( e.getNextException() );
 		}
-		catch ( SQLException e ) {
+		catch (SQLException e) {
 			throw new RuntimeException( e );
 		}
 	}
@@ -74,12 +75,12 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 		try {
 			session = openSession();
 			tx = session.beginTransaction();
-			String hql = String.format("delete from org.hibernate.spatial.integration.%s.GeomEntity", pckg);
+			String hql = String.format( "delete from %s", entityName(pckg) );
 			Query q = session.createQuery( hql );
 			q.executeUpdate();
 			tx.commit();
 		}
-		catch ( Exception e ) {
+		catch (Exception e) {
 			if ( tx != null ) {
 				tx.rollback();
 			}
@@ -98,7 +99,7 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 	 * @return
 	 */
 	protected void afterConfigurationBuilt(Configuration cfg) {
-        super.afterConfigurationBuilt(cfg);
+		super.afterConfigurationBuilt( cfg );
 		initializeSpatialTestSupport( serviceRegistry() );
 	}
 
@@ -110,7 +111,7 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 			testData = support.createTestData( this );
 			geometryEquality = support.createGeometryEquality();
 		}
-		catch ( Exception e ) {
+		catch (Exception e) {
 			throw new RuntimeException( e );
 		}
 	}
@@ -139,14 +140,14 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 	}
 
 	public String[] getMappings() {
-		return new String[] { };
+		return new String[] {};
 	}
 
 	@Override
 	protected Class<?>[] getAnnotatedClasses() {
 		return new Class<?>[] {
 				org.hibernate.spatial.integration.geolatte.GeomEntity.class,
-				org.hibernate.spatial.integration.jts.GeomEntity.class
+				JtsGeomEntity.class
 		};
 	}
 
@@ -198,7 +199,7 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 	}
 
 	protected <T> void compare(Map<Integer, T> expected, Map<Integer, T> received, String geometryType) {
-		for ( Map.Entry<Integer, T> entry:  expected.entrySet()) {
+		for ( Map.Entry<Integer, T> entry : expected.entrySet() ) {
 			Integer id = entry.getKey();
 			getLogger().debug( "Case :" + id );
 			getLogger().debug( "expected: " + expected.get( id ) );
@@ -212,8 +213,9 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 		if ( expected instanceof byte[] ) {
 			assertArrayEquals( "Failure on testsuite-suite for case " + id, (byte[]) expected, (byte[]) received );
 
-		} else if ( expected instanceof Geometry ) {
-			if ( JTS.equals(geometryType) ) {
+		}
+		else if ( expected instanceof Geometry ) {
+			if ( JTS.equals( geometryType ) ) {
 				if ( !( received instanceof Geometry ) ) {
 					fail(
 							"Expected a JTS Geometry, but received an object of type " + received.getClass()
@@ -224,7 +226,8 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 						"Failure on testsuite-suite for case " + id,
 						geometryEquality.test( (Geometry) expected, (Geometry) received )
 				);
-			} else {
+			}
+			else {
 				if ( !( received instanceof org.geolatte.geom.Geometry ) ) {
 					fail(
 							"Expected a Geolatte Geometry, but received an object of type " + received.getClass()
@@ -233,7 +236,10 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 				}
 				assertTrue(
 						"Failure on testsuite-suite for case " + id,
-						geometryEquality.test( (Geometry) expected, (Geometry) org.geolatte.geom.jts.JTS.to((org.geolatte.geom.Geometry)received) )
+						geometryEquality.test(
+								(Geometry) expected,
+								(Geometry) org.geolatte.geom.jts.JTS.to( (org.geolatte.geom.Geometry) received )
+						)
 				);
 			}
 
@@ -245,6 +251,14 @@ public abstract class SpatialFunctionalTestCase extends BaseCoreFunctionalTestCa
 			else {
 				assertEquals( "Failure on testsuite-suite for case " + id, expected, received );
 			}
+		}
+	}
+
+	protected String entityName(String pckg) {
+		if (JTS.equalsIgnoreCase(  pckg )) {
+			return "org.hibernate.spatial.integration.jts.JtsGeomEntity";
+		} else {
+			return "org.hibernate.spatial.integration.geolatte.GeomEntity";
 		}
 	}
 

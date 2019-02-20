@@ -10,8 +10,6 @@ import java.math.BigDecimal;
 import java.util.Iterator;
 import java.util.List;
 
-import org.junit.Test;
-
 import org.hibernate.CacheMode;
 import org.hibernate.Hibernate;
 import org.hibernate.Query;
@@ -20,6 +18,8 @@ import org.hibernate.ScrollableResults;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.proxy.HibernateProxy;
+
+import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;

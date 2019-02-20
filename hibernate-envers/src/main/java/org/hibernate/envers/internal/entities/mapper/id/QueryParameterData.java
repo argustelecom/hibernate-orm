@@ -6,8 +6,9 @@
  */
 package org.hibernate.envers.internal.entities.mapper.id;
 
-import org.hibernate.Query;
-import org.hibernate.internal.util.compare.EqualsHelper;
+import java.util.Objects;
+
+import org.hibernate.query.Query;
 
 /**
  * @author Adam Warski (adam at warski dot org)
@@ -52,7 +53,7 @@ public class QueryParameterData {
 		}
 
 		final QueryParameterData that = (QueryParameterData) o;
-		return EqualsHelper.equals( flatEntityPropertyName, that.flatEntityPropertyName );
+		return Objects.equals( flatEntityPropertyName, that.flatEntityPropertyName );
 	}
 
 	@Override

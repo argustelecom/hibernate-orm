@@ -22,6 +22,7 @@ import org.hibernate.internal.util.StringHelper;
 public class ForeignKey extends Constraint {
 	private Table referencedTable;
 	private String referencedEntityName;
+	private String keyDefinition;
 	private boolean cascadeDeleteEnabled;
 	private List<Column> referencedColumns = new ArrayList<Column>();
 	private boolean creationEnabled = true;
@@ -32,7 +33,7 @@ public class ForeignKey extends Constraint {
 	@Override
 	public String getExportIdentifier() {
 		// NOt sure name is always set.  Might need some implicit naming
-		return StringHelper.qualify( getTable().getName(), "FK-" + getName() );
+		return StringHelper.qualify( getTable().getExportIdentifier(), "FK-" + getName() );
 	}
 
 	public void disableCreation() {
@@ -77,13 +78,23 @@ public class ForeignKey extends Constraint {
 			i++;
 		}
 
-		final String result = dialect.getAddForeignKeyConstraintString(
-				constraintName,
-				columnNames,
-				referencedTable.getQualifiedName( dialect, defaultCatalog, defaultSchema ),
-				referencedColumnNames,
-				isReferenceToPrimaryKey()
-		);
+		final String result = keyDefinition != null ?
+				dialect.getAddForeignKeyConstraintString(
+						constraintName,
+						keyDefinition
+				) :
+				dialect.getAddForeignKeyConstraintString(
+						constraintName,
+						columnNames,
+						referencedTable.getQualifiedName(
+								dialect,
+								defaultCatalog,
+								defaultSchema
+						),
+						referencedColumnNames,
+						isReferenceToPrimaryKey()
+				);
+		
 		return cascadeDeleteEnabled && dialect.supportsCascadeDelete()
 				? result + " on delete cascade"
 				: result;
@@ -153,9 +164,17 @@ public class ForeignKey extends Constraint {
 		this.referencedEntityName = referencedEntityName;
 	}
 
+	public String getKeyDefinition() {
+		return keyDefinition;
+	}
+
+	public void setKeyDefinition(String keyDefinition) {
+		this.keyDefinition = keyDefinition;
+	}
+	
 	public String sqlDropString(Dialect dialect, String defaultCatalog, String defaultSchema) {
-		final StringBuilder buf = new StringBuilder( "alter table " );
-		buf.append( getTable().getQualifiedName( dialect, defaultCatalog, defaultSchema ) );
+		String tableName = getTable().getQualifiedName( dialect, defaultCatalog, defaultSchema );
+		final StringBuilder buf = new StringBuilder( dialect.getAlterTableString( tableName ) );
 		buf.append( dialect.getDropForeignKeyString() );
 		if ( dialect.supportsIfExistsBeforeConstraintName() ) {
 			buf.append( "if exists " );

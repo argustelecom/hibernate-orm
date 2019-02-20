@@ -14,17 +14,14 @@ import java.util.Set;
 import org.hibernate.MappingException;
 import org.hibernate.QueryException;
 import org.hibernate.engine.internal.JoinSequence;
-import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.hql.internal.CollectionProperties;
 import org.hibernate.hql.internal.CollectionSubqueryFactory;
 import org.hibernate.hql.internal.NameGenerator;
 import org.hibernate.hql.internal.antlr.HqlSqlTokenTypes;
-import org.hibernate.hql.internal.ast.HqlSqlWalker;
-import org.hibernate.hql.internal.ast.util.SessionFactoryHelper;
 import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.internal.log.DeprecationLogger;
 import org.hibernate.internal.util.collections.ArrayHelper;
+import org.hibernate.loader.PropertyPath;
 import org.hibernate.param.ParameterSpecification;
 import org.hibernate.persister.collection.CollectionPropertyMapping;
 import org.hibernate.persister.collection.CollectionPropertyNames;
@@ -33,6 +30,8 @@ import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.persister.entity.Joinable;
 import org.hibernate.persister.entity.PropertyMapping;
 import org.hibernate.persister.entity.Queryable;
+import org.hibernate.tuple.IdentifierProperty;
+import org.hibernate.type.EmbeddedComponentType;
 import org.hibernate.type.EntityType;
 import org.hibernate.type.Type;
 
@@ -129,19 +128,23 @@ class FromElementType {
 	 */
 	String renderScalarIdentifierSelect(int i) {
 		checkInitialized();
-		String[] cols = getPropertyMapping( EntityPersister.ENTITY_ID ).toColumns(
-				getTableAlias(),
-				EntityPersister.ENTITY_ID
-		);
+
+		final String[] idPropertyName = getIdentifierPropertyNames();
 		StringBuilder buf = new StringBuilder();
-		// For property references generate <tablealias>.<columnname> as <projectionalias>
-		for ( int j = 0; j < cols.length; j++ ) {
-			String column = cols[j];
-			if ( j > 0 ) {
-				buf.append( ", " );
+		int counter = 0;
+		for ( int j = 0; j < idPropertyName.length; j++ ) {
+			String propertyName = idPropertyName[j];
+			String[] toColumns = getPropertyMapping( propertyName ).toColumns( getTableAlias(), propertyName );
+			for ( int h = 0; h < toColumns.length; h++, counter++ ) {
+				String column = toColumns[h];
+				if ( j + h > 0 ) {
+					buf.append( ", " );
+				}
+				buf.append( column ).append( " as " ).append( NameGenerator.scalarName( i, counter ) );
 			}
-			buf.append( column ).append( " as " ).append( NameGenerator.scalarName( i, j ) );
 		}
+
+		LOG.debug( "Rendered scalar ID select column(s): " + buf );
 		return buf.toString();
 	}
 
@@ -429,7 +432,7 @@ class FromElementType {
 			// this is hacky, but really this is difficult to handle given the current codebase.
 			if ( persister != propertyMapping ) {
 				// we want the subquery...
-				DeprecationLogger.DEPRECATION_LOGGER.logDeprecationOfCollectionPropertiesInHql( path, fromElement.getClassAlias() );
+//				DeprecationLogger.DEPRECATION_LOGGER.logDeprecationOfCollectionPropertiesInHql( path, fromElement.getClassAlias() );
 				return getCollectionPropertyReference( path ).toColumns( tableAlias );
 			}
 		}
@@ -453,11 +456,16 @@ class FromElementType {
 			// executors being used (as this subquery will
 			// actually be used in the "id select" phase
 			// of that multi-table executor)
+			// for update queries, the real table name of the updated table must be used if not in the top level where
+			// clause, typically in a SET clause
 			// B) otherwise, we need to use the persister's
 			// table name as the column qualification
 			// 2) otherwise (not correlated), use the given alias
 			if ( isCorrelation() ) {
-				if ( isMultiTable() ) {
+				if ( isMultiTable() && ( !isUpdateQuery() || inWhereClause() ) ) {
+					return propertyMapping.toColumns( tableAlias, path );
+				}
+				else if ( isInsertQuery() ) {
 					return propertyMapping.toColumns( tableAlias, path );
 				}
 				return propertyMapping.toColumns( extractTableName(), path );
@@ -496,6 +504,14 @@ class FromElementType {
 	private String extractTableName() {
 		// should be safe to only ever expect EntityPersister references here
 		return fromElement.getQueryable().getTableName();
+	}
+
+	private boolean isInsertQuery() {
+		return fromElement.getWalker().getStatementType() == HqlSqlTokenTypes.INSERT;
+	}
+
+	private boolean isUpdateQuery() {
+		return fromElement.getWalker().getStatementType() == HqlSqlTokenTypes.UPDATE;
 	}
 
 	private boolean isManipulationQuery() {
@@ -618,7 +634,7 @@ class FromElementType {
 
 				Map enabledFilters = fromElement.getWalker().getEnabledFilters();
 				String subquery = CollectionSubqueryFactory.createCollectionSubquery(
-						joinSequence.copy().setUseThetaStyle( true ),
+						joinSequence.copyForCollectionProperty().setUseThetaStyle( true ),
 						enabledFilters,
 						collectionPropertyMapping.toColumns( tableAlias, propertyName )
 				);
@@ -676,5 +692,27 @@ class FromElementType {
 			validate( propertyName );
 			return queryableCollection.toColumns( propertyName );
 		}
+	}
+
+	public String[] getIdentifierPropertyNames() {
+		if ( getEntityPersister() != null ) {
+			String identifierPropertyName = getEntityPersister().getIdentifierPropertyName();
+			if ( identifierPropertyName != null ) {
+				return new String[] { identifierPropertyName };
+			}
+			else {
+				final IdentifierProperty identifierProperty = getEntityPersister().getEntityMetamodel()
+						.getIdentifierProperty();
+				if ( identifierProperty.hasIdentifierMapper() && !identifierProperty.isEmbedded() ) {
+					return new String[] { PropertyPath.IDENTIFIER_MAPPER_PROPERTY };
+				}
+				else {
+					if ( EmbeddedComponentType.class.isInstance( identifierProperty.getType() ) ) {
+						return ( (EmbeddedComponentType) identifierProperty.getType() ).getPropertyNames();
+					}
+				}
+			}
+		}
+		return new String[] { EntityPersister.ENTITY_ID };
 	}
 }

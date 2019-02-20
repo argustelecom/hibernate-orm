@@ -10,7 +10,11 @@ import java.util.ArrayList;
 
 import org.hibernate.Session;
 import org.hibernate.collection.internal.PersistentBag;
+import org.hibernate.dialect.AbstractHANADialect;
 
+import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.RequiresDialectFeature;
+import org.hibernate.testing.SkipForDialect;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 import org.junit.Test;
 
@@ -23,6 +27,7 @@ import static org.junit.Assert.assertTrue;
  *
  * @author Steve Ebersole
  */
+@RequiresDialectFeature(DialectChecks.SupportsNoColumnInsert.class)
 public class PersistentBagTest extends BaseCoreFunctionalTestCase {
 	@Override
 	public String[] getMappings() {
@@ -72,6 +77,7 @@ public class PersistentBagTest extends BaseCoreFunctionalTestCase {
 	}
 
 	@Test
+	@SkipForDialect(value = AbstractHANADialect.class, comment = " HANA doesn't support tables consisting of only a single auto-generated column")
 	public void testMergePersistentEntityWithNewOneToManyElements() {
 		Order order = new Order();
 

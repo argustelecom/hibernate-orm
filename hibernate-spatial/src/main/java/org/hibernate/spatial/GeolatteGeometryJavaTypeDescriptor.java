@@ -7,19 +7,22 @@
 
 package org.hibernate.spatial;
 
-import org.geolatte.geom.Geometry;
-import org.geolatte.geom.codec.Wkt;
-import org.geolatte.geom.jts.JTS;
+import java.sql.Types;
 
 import org.hibernate.type.descriptor.WrapperOptions;
 import org.hibernate.type.descriptor.java.AbstractTypeDescriptor;
-import org.hibernate.type.descriptor.java.JavaTypeDescriptorRegistry;
+import org.hibernate.type.descriptor.spi.JdbcRecommendedSqlTypeMappingContext;
+import org.hibernate.type.descriptor.sql.SqlTypeDescriptor;
+
+import org.geolatte.geom.Geometry;
+import org.geolatte.geom.codec.Wkt;
+import org.geolatte.geom.jts.JTS;
 
 /**
  * Descriptor for geolatte-geom {@code Geometry}s.
  *
  * @author Karel Maesen, Geovise BVBA
- *         creation-date: 10/12/12
+ * creation-date: 10/12/12
  */
 public class GeolatteGeometryJavaTypeDescriptor extends AbstractTypeDescriptor<Geometry> {
 
@@ -33,7 +36,11 @@ public class GeolatteGeometryJavaTypeDescriptor extends AbstractTypeDescriptor<G
 	 */
 	public GeolatteGeometryJavaTypeDescriptor() {
 		super( Geometry.class );
-		JavaTypeDescriptorRegistry.INSTANCE.addDescriptor( this );
+	}
+
+	@Override
+	public SqlTypeDescriptor getJdbcRecommendedSqlType(JdbcRecommendedSqlTypeMappingContext context) {
+		return context.getTypeConfiguration().getSqlTypeDescriptorRegistry().getDescriptor( Types.ARRAY );
 	}
 
 	@Override
@@ -56,7 +63,7 @@ public class GeolatteGeometryJavaTypeDescriptor extends AbstractTypeDescriptor<G
 			return (X) value;
 		}
 
-		if ( com.vividsolutions.jts.geom.Geometry.class.isAssignableFrom( type ) ) {
+		if ( org.locationtech.jts.geom.Geometry.class.isAssignableFrom( type ) ) {
 			return (X) JTS.to( value );
 		}
 
@@ -78,8 +85,8 @@ public class GeolatteGeometryJavaTypeDescriptor extends AbstractTypeDescriptor<G
 			return fromString( (String) value );
 		}
 
-		if ( com.vividsolutions.jts.geom.Geometry.class.isInstance( value ) ) {
-			return JTS.from( (com.vividsolutions.jts.geom.Geometry) value );
+		if ( org.locationtech.jts.geom.Geometry.class.isInstance( value ) ) {
+			return JTS.from( (org.locationtech.jts.geom.Geometry) value );
 		}
 
 		throw unknownWrap( value.getClass() );

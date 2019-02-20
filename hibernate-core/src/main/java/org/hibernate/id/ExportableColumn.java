@@ -135,8 +135,13 @@ public class ExportableColumn extends Column {
 		}
 
 		@Override
+		public boolean isSame(Value value) {
+			return false;
+		}
+
+		@Override
 		public ServiceRegistry getServiceRegistry() {
-			return database.getBuildingOptions().getServiceRegistry();
+			return database.getServiceRegistry();
 		}
 	}
 

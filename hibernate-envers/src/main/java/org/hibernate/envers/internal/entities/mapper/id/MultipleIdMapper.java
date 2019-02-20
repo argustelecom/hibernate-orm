@@ -11,17 +11,42 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.hibernate.envers.exception.AuditException;
+import org.hibernate.Session;
 import org.hibernate.envers.internal.entities.PropertyData;
-import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.service.ServiceRegistry;
 
 /**
  * @author Adam Warski (adam at warski dot org)
+ * @author Chris Cranford
  */
 public class MultipleIdMapper extends AbstractCompositeIdMapper implements SimpleIdMapperBuilder {
 	public MultipleIdMapper(Class compositeIdClass, ServiceRegistry serviceRegistry) {
 		super( compositeIdClass, serviceRegistry );
+	}
+
+	@Override
+	public void add(PropertyData propertyData) {
+		ids.put( propertyData, resolveIdMapper( propertyData ) );
+	}
+
+	@Override
+	public void mapToMapFromId(Session session, Map<String, Object> data, Object obj) {
+		if ( compositeIdClass.isInstance( obj ) ) {
+			for ( Map.Entry<PropertyData, SingleIdMapper> entry : ids.entrySet() ) {
+				final PropertyData propertyData = entry.getKey();
+				final SingleIdMapper idMapper = entry.getValue();
+
+				if ( propertyData.getVirtualReturnClass() == null ) {
+					idMapper.mapToMapFromEntity( data, obj );
+				}
+				else {
+					idMapper.mapToMapFromId( session, data, obj );
+				}
+			}
+		}
+		else {
+			mapToMapFromId( data, obj );
+		}
 	}
 
 	@Override
@@ -33,7 +58,9 @@ public class MultipleIdMapper extends AbstractCompositeIdMapper implements Simpl
 
 	@Override
 	public void mapToMapFromEntity(Map<String, Object> data, Object obj) {
-		mapToMapFromId( data, obj );
+		for ( IdMapper idMapper : ids.values() ) {
+			idMapper.mapToMapFromEntity( data, obj );
+		}
 	}
 
 	@Override
@@ -52,7 +79,7 @@ public class MultipleIdMapper extends AbstractCompositeIdMapper implements Simpl
 
 		for ( PropertyData propertyData : ids.keySet() ) {
 			final String propertyName = propertyData.getName();
-			ret.ids.put( propertyData, new SingleIdMapper( getServiceRegistry(), new PropertyData( prefix + propertyName, propertyData ) ) );
+			ret.ids.put( propertyData, resolveIdMapper( new PropertyData( prefix + propertyName, propertyData ) ) );
 		}
 
 		return ret;
@@ -64,32 +91,32 @@ public class MultipleIdMapper extends AbstractCompositeIdMapper implements Simpl
 			return null;
 		}
 
-		final Object ret;
-		try {
-			ret = ReflectHelper.getDefaultConstructor( compositeIdClass ).newInstance();
-		}
-		catch (Exception e) {
-			throw new AuditException( e );
-		}
-
+		final Object compositeId = instantiateCompositeId();
 		for ( SingleIdMapper mapper : ids.values() ) {
-			mapper.mapToEntityFromEntity( ret, data );
+			mapper.mapToEntityFromEntity( compositeId, data );
 		}
 
-		return ret;
+		return compositeId;
 	}
 
 	@Override
 	public List<QueryParameterData> mapToQueryParametersFromId(Object obj) {
-		final Map<String, Object> data = new LinkedHashMap<String, Object>();
+		final Map<String, Object> data = new LinkedHashMap<>();
 		mapToMapFromId( data, obj );
 
-		final List<QueryParameterData> ret = new ArrayList<QueryParameterData>();
+		final List<QueryParameterData> ret = new ArrayList<>();
 
 		for ( Map.Entry<String, Object> propertyData : data.entrySet() ) {
 			ret.add( new QueryParameterData( propertyData.getKey(), propertyData.getValue() ) );
 		}
 
 		return ret;
+	}
+
+	private SingleIdMapper resolveIdMapper(PropertyData propertyData) {
+		if ( propertyData.getVirtualReturnClass() != null ) {
+			return new VirtualEntitySingleIdMapper( getServiceRegistry(), propertyData );
+		}
+		return new SingleIdMapper( getServiceRegistry(), propertyData );
 	}
 }

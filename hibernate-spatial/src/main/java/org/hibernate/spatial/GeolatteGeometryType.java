@@ -7,6 +7,9 @@
 
 package org.hibernate.spatial;
 
+import org.hibernate.type.AbstractSingleColumnStandardBasicType;
+import org.hibernate.type.descriptor.sql.SqlTypeDescriptor;
+
 import org.geolatte.geom.Geometry;
 import org.geolatte.geom.GeometryCollection;
 import org.geolatte.geom.LineString;
@@ -16,16 +19,25 @@ import org.geolatte.geom.MultiPolygon;
 import org.geolatte.geom.Point;
 import org.geolatte.geom.Polygon;
 
-import org.hibernate.type.AbstractSingleColumnStandardBasicType;
-import org.hibernate.type.descriptor.sql.SqlTypeDescriptor;
-
 /**
  * a {@code Type} that maps between the database geometry type and geolatte-geom {@code Geometry}.
  *
  * @author Karel Maesen, Geovise BVBA
- *         creation-date: 10/12/12
+ * creation-date: 10/12/12
  */
 public class GeolatteGeometryType extends AbstractSingleColumnStandardBasicType<Geometry> implements Spatial {
+
+	public static final String[] REG_KEYS = {
+			Geometry.class.getCanonicalName(),
+			Point.class.getCanonicalName(),
+			Polygon.class.getCanonicalName(),
+			MultiPolygon.class.getCanonicalName(),
+			LineString.class.getCanonicalName(),
+			MultiLineString.class.getCanonicalName(),
+			MultiPoint.class.getCanonicalName(),
+			GeometryCollection.class.getCanonicalName(),
+			"geolatte_geometry"
+	};
 
 	/**
 	 * Constructs an instance with the specified {@code SqlTypeDescriptor}
@@ -38,17 +50,7 @@ public class GeolatteGeometryType extends AbstractSingleColumnStandardBasicType<
 
 	@Override
 	public String[] getRegistrationKeys() {
-		return new String[] {
-				Geometry.class.getCanonicalName(),
-				Point.class.getCanonicalName(),
-				Polygon.class.getCanonicalName(),
-				MultiPolygon.class.getCanonicalName(),
-				LineString.class.getCanonicalName(),
-				MultiLineString.class.getCanonicalName(),
-				MultiPoint.class.getCanonicalName(),
-				GeometryCollection.class.getCanonicalName(),
-				"geolatte_geometry"
-		};
+		return REG_KEYS;
 	}
 
 	@Override

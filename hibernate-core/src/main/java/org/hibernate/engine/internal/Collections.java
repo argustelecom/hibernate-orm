@@ -10,6 +10,7 @@ import java.io.Serializable;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.HibernateException;
+import org.hibernate.action.internal.DelayedPostInsertIdentifier;
 import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.engine.spi.CollectionEntry;
 import org.hibernate.engine.spi.EntityEntry;
@@ -43,7 +44,7 @@ public final class Collections {
 	 * @param session The session
 	 */
 	public static void processUnreachableCollection(PersistentCollection coll, SessionImplementor session) {
-		if ( coll.getOwner()==null ) {
+		if ( coll.getOwner() == null ) {
 			processNeverReferencedCollection( coll, session );
 		}
 		else {
@@ -73,7 +74,7 @@ public final class Collections {
 				// the owning entity may have been deleted and its identifier unset due to
 				// identifier-rollback; in which case, try to look up its identifier from
 				// the persistence context
-				if ( session.getFactory().getSettings().isIdentifierRollbackEnabled() ) {
+				if ( session.getFactory().getSessionFactoryOptions().isIdentifierRollbackEnabled() ) {
 					final EntityEntry ownerEntry = persistenceContext.getEntry( coll.getOwner() );
 					if ( ownerEntry != null ) {
 						ownerId = ownerEntry.getId();
@@ -156,40 +157,73 @@ public final class Collections {
 			);
 		}
 
-		// The CollectionEntry.isReached() stuff is just to detect any silly users
-		// who set up circular or shared references between/to collections.
-		if ( ce.isReached() ) {
-			// We've been here before
-			throw new HibernateException(
-					"Found shared references to a collection: " + type.getRole()
-			);
-		}
-		ce.setReached( true );
-
 		final SessionFactoryImplementor factory = session.getFactory();
-		final CollectionPersister persister = factory.getCollectionPersister( type.getRole() );
+		final CollectionPersister persister = factory.getMetamodel().collectionPersister( type.getRole() );
+
 		ce.setCurrentPersister( persister );
 		//TODO: better to pass the id in as an argument?
 		ce.setCurrentKey( type.getKeyOfOwner( entity, session ) );
 
-		if ( LOG.isDebugEnabled() ) {
-			if ( collection.wasInitialized() ) {
-				LOG.debugf(
-						"Collection found: %s, was: %s (initialized)",
-						MessageHelper.collectionInfoString( persister, collection, ce.getCurrentKey(), session ),
-						MessageHelper.collectionInfoString( ce.getLoadedPersister(), collection, ce.getLoadedKey(), session )
-				);
-			}
-			else {
-				LOG.debugf(
-						"Collection found: %s, was: %s (uninitialized)",
-						MessageHelper.collectionInfoString( persister, collection, ce.getCurrentKey(), session ),
-						MessageHelper.collectionInfoString( ce.getLoadedPersister(), collection, ce.getLoadedKey(), session )
-				);
-			}
+		final boolean isBytecodeEnhanced = persister.getOwnerEntityPersister().getInstrumentationMetadata().isEnhancedForLazyLoading();
+		if ( isBytecodeEnhanced && !collection.wasInitialized() ) {
+			// skip it
+			LOG.debugf(
+					"Skipping uninitialized bytecode-lazy collection: %s",
+					MessageHelper.collectionInfoString( persister, collection, ce.getCurrentKey(), session )
+			);
+			ce.setReached( true );
+			ce.setProcessed( true );
 		}
+		else {
+			// The CollectionEntry.isReached() stuff is just to detect any silly users
+			// who set up circular or shared references between/to collections.
+			if ( ce.isReached() ) {
+				// We've been here before
+				throw new HibernateException(
+						"Found shared references to a collection: " + type.getRole()
+				);
+			}
+			ce.setReached( true );
 
-		prepareCollectionForUpdate( collection, ce, factory );
+			if ( LOG.isDebugEnabled() ) {
+				if ( collection.wasInitialized() ) {
+					LOG.debugf(
+							"Collection found: %s, was: %s (initialized)",
+							MessageHelper.collectionInfoString(
+									persister,
+									collection,
+									ce.getCurrentKey(),
+									session
+							),
+							MessageHelper.collectionInfoString(
+									ce.getLoadedPersister(),
+									collection,
+									ce.getLoadedKey(),
+									session
+							)
+					);
+				}
+				else {
+					LOG.debugf(
+							"Collection found: %s, was: %s (uninitialized)",
+							MessageHelper.collectionInfoString(
+									persister,
+									collection,
+									ce.getCurrentKey(),
+									session
+							),
+							MessageHelper.collectionInfoString(
+									ce.getLoadedPersister(),
+									collection,
+									ce.getLoadedKey(),
+									session
+							)
+					);
+				}
+			}
+
+			prepareCollectionForUpdate( collection, ce, factory );
+		}
 	}
 
 	/**
@@ -212,9 +246,15 @@ public final class Collections {
 		if ( loadedPersister != null || currentPersister != null ) {
 			// it is or was referenced _somewhere_
 
+			// check if the key changed
+			// excludes marking key changed when the loaded key is a DelayedPostInsertIdentifier.
+			final boolean keyChanged = currentPersister != null
+					&& entry != null
+					&& !currentPersister.getKeyType().isEqual( entry.getLoadedKey(), entry.getCurrentKey(), factory )
+					&& !( entry.getLoadedKey() instanceof DelayedPostInsertIdentifier );
+
 			// if either its role changed, or its key changed
-			final boolean ownerChanged = loadedPersister != currentPersister
-					|| !currentPersister.getKeyType().isEqual( entry.getLoadedKey(), entry.getCurrentKey(), factory );
+			final boolean ownerChanged = loadedPersister != currentPersister || keyChanged;
 
 			if ( ownerChanged ) {
 				// do a check

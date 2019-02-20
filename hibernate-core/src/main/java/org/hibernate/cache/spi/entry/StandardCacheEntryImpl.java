@@ -7,20 +7,17 @@
 package org.hibernate.cache.spi.entry;
 
 import java.io.Serializable;
-import java.util.Set;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.HibernateException;
 import org.hibernate.Interceptor;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.event.service.spi.EventListenerGroup;
 import org.hibernate.event.service.spi.EventListenerRegistry;
 import org.hibernate.event.spi.EventSource;
 import org.hibernate.event.spi.EventType;
 import org.hibernate.event.spi.PreLoadEvent;
 import org.hibernate.event.spi.PreLoadEventListener;
-import org.hibernate.internal.util.collections.ArrayHelper;
-import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.persister.entity.EntityPersister;
 import org.hibernate.type.TypeHelper;
 
@@ -30,9 +27,10 @@ import org.hibernate.type.TypeHelper;
  * @author Steve Ebersole
  */
 public class StandardCacheEntryImpl implements CacheEntry {
+
 	private final Serializable[] disassembledState;
-	private final String subclass;
 	private final Object version;
+	private final String subclass;
 
 	/**
 	 * Constructs a StandardCacheEntryImpl
@@ -49,7 +47,7 @@ public class StandardCacheEntryImpl implements CacheEntry {
 			final Object[] state,
 			final EntityPersister persister,
 			final Object version,
-			final SessionImplementor session,
+			final SharedSessionContractImplementor session,
 			final Object owner) throws HibernateException {
 		// disassembled state gets put in a new array (we write to cache by value!)
 		this.disassembledState = TypeHelper.disassemble(
@@ -59,12 +57,12 @@ public class StandardCacheEntryImpl implements CacheEntry {
 				session,
 				owner
 		);
-		subclass = persister.getEntityName();
+		this.subclass = persister.getEntityName();
 		this.version = version;
 	}
 
-	StandardCacheEntryImpl(Serializable[] state, String subclass, Object version) {
-		this.disassembledState = state;
+	StandardCacheEntryImpl(Serializable[] disassembledState, String subclass, Object version) {
+		this.disassembledState = disassembledState;
 		this.subclass = subclass;
 		this.version = version;
 	}
@@ -134,7 +132,7 @@ public class StandardCacheEntryImpl implements CacheEntry {
 		}
 
 		//assembled state gets put in a new array (we read from cache by value!)
-		final Object[] assembledProps = TypeHelper.assemble(
+		final Object[] state = TypeHelper.assemble(
 				disassembledState,
 				persister.getPropertyTypes(),
 				session, instance
@@ -145,7 +143,7 @@ public class StandardCacheEntryImpl implements CacheEntry {
 		//TODO: reuse the PreLoadEvent
 		final PreLoadEvent preLoadEvent = new PreLoadEvent( session )
 				.setEntity( instance )
-				.setState( assembledProps )
+				.setState( state )
 				.setId( id )
 				.setPersister( persister );
 
@@ -158,13 +156,14 @@ public class StandardCacheEntryImpl implements CacheEntry {
 			listener.onPreLoad( preLoadEvent );
 		}
 
-		persister.setPropertyValues( instance, assembledProps );
+		persister.setPropertyValues( instance, state );
 
-		return assembledProps;
+		return state;
 	}
 
 	@Override
 	public String toString() {
-		return "CacheEntry(" + subclass + ')' + ArrayHelper.toString( disassembledState );
+		return "CacheEntry(" + subclass + ')';
 	}
+
 }

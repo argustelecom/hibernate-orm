@@ -19,14 +19,12 @@ import org.junit.Test;
 
 import org.jboss.logging.Logger;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 /**
  * @author Vlad Mihalcea
  */
 public class JmxTest extends BaseEntityManagerFunctionalTestCase {
-
-    private static final Logger log = Logger.getLogger( JmxTest.class );
 
     @Override
     protected Class<?>[] getAnnotatedClasses() {
@@ -38,6 +36,7 @@ public class JmxTest extends BaseEntityManagerFunctionalTestCase {
     @Override
     protected Map buildSettings() {
         Map properties = super.buildSettings();
+        properties.put( AvailableSettings.GENERATE_STATISTICS, Boolean.TRUE.toString());
         properties.put( AvailableSettings.JMX_ENABLED, Boolean.TRUE.toString());
         properties.put( AvailableSettings.JMX_DOMAIN_NAME, "test");
         return properties;

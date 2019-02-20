@@ -9,9 +9,13 @@ package org.hibernate.test.hql;
 import org.junit.Test;
 
 import org.hibernate.Session;
+import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.cfg.Environment;
 import org.hibernate.hql.internal.classic.ClassicQueryTranslatorFactory;
+
+import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.RequiresDialectFeature;
 
 /**
  * Some simple test queries using the classic translator explicitly
@@ -21,11 +25,13 @@ import org.hibernate.hql.internal.classic.ClassicQueryTranslatorFactory;
  *
  * @author Steve Ebersole
  */
+@RequiresDialectFeature(DialectChecks.SupportsNoColumnInsert.class)
 public class ClassicTranslatorTest extends QueryTranslatorTestCase {
 	@Override
 	public void configure(Configuration cfg) {
 		super.configure( cfg );
 		cfg.setProperty( Environment.QUERY_TRANSLATOR, ClassicQueryTranslatorFactory.class.getName() );
+		cfg.setProperty( AvailableSettings.JDBC_TYLE_PARAMS_ZERO_BASE, "true" );
 	}
 
 	@Override
@@ -52,10 +58,6 @@ public class ClassicTranslatorTest extends QueryTranslatorTestCase {
 
 		session.createQuery( "from Animal as a where a.description = ?" ).setString( 0, "jj" ).list();
 		session.createQuery( "from Animal as a where a.description = :desc" ).setString( "desc", "jr" ).list();
-		session.createQuery( "from Animal as a where a.description = ? or a.description = :desc" )
-				.setString( 0, "jj" )
-				.setString( "desc", "jr" )
-				.list();
 
 		session.getTransaction().commit();
 		session.close();

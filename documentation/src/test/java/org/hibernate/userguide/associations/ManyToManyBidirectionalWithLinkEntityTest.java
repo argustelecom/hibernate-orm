@@ -25,14 +25,12 @@ import org.junit.Test;
 
 import org.jboss.logging.Logger;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 /**
  * @author Vlad Mihalcea
  */
 public class ManyToManyBidirectionalWithLinkEntityTest extends BaseEntityManagerFunctionalTestCase {
-
-	private static final Logger log = Logger.getLogger( ManyToManyBidirectionalWithLinkEntityTest.class );
 
 	@Override
 	protected Class<?>[] getAnnotatedClasses() {
@@ -83,8 +81,16 @@ public class ManyToManyBidirectionalWithLinkEntityTest extends BaseEntityManager
 		@NaturalId
 		private String registrationNumber;
 
-		@OneToMany(mappedBy = "person", cascade = CascadeType.ALL, orphanRemoval = true)
+		@OneToMany(
+			mappedBy = "person",
+			cascade = CascadeType.ALL,
+			orphanRemoval = true
+		)
 		private List<PersonAddress> addresses = new ArrayList<>();
+
+		//Getters and setters are omitted for brevity
+
+	//end::associations-many-to-many-bidirectional-with-link-entity-example[]
 
 		public Person() {
 		}
@@ -101,6 +107,7 @@ public class ManyToManyBidirectionalWithLinkEntityTest extends BaseEntityManager
 			return addresses;
 		}
 
+	//tag::associations-many-to-many-bidirectional-with-link-entity-example[]
 		public void addAddress(Address address) {
 			PersonAddress personAddress = new PersonAddress( this, address );
 			addresses.add( personAddress );
@@ -144,6 +151,10 @@ public class ManyToManyBidirectionalWithLinkEntityTest extends BaseEntityManager
 		@ManyToOne
 		private Address address;
 
+		//Getters and setters are omitted for brevity
+
+	//end::associations-many-to-many-bidirectional-with-link-entity-example[]
+
 		public PersonAddress() {
 		}
 
@@ -168,6 +179,7 @@ public class ManyToManyBidirectionalWithLinkEntityTest extends BaseEntityManager
 			this.address = address;
 		}
 
+	//tag::associations-many-to-many-bidirectional-with-link-entity-example[]
 		@Override
 		public boolean equals(Object o) {
 			if ( this == o ) {
@@ -201,8 +213,16 @@ public class ManyToManyBidirectionalWithLinkEntityTest extends BaseEntityManager
 
 		private String postalCode;
 
-		@OneToMany(mappedBy = "address", cascade = CascadeType.ALL, orphanRemoval = true)
+		@OneToMany(
+			mappedBy = "address",
+			cascade = CascadeType.ALL,
+			orphanRemoval = true
+		)
 		private List<PersonAddress> owners = new ArrayList<>();
+
+		//Getters and setters are omitted for brevity
+
+	//end::associations-many-to-many-bidirectional-with-link-entity-example[]
 
 		public Address() {
 		}
@@ -233,6 +253,7 @@ public class ManyToManyBidirectionalWithLinkEntityTest extends BaseEntityManager
 			return owners;
 		}
 
+	//tag::associations-many-to-many-bidirectional-with-link-entity-example[]
 		@Override
 		public boolean equals(Object o) {
 			if ( this == o ) {

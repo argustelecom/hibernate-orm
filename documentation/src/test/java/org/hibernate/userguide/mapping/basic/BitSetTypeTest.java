@@ -16,7 +16,7 @@ import org.hibernate.cfg.Configuration;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 import org.junit.Test;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInHibernate;
+import static org.hibernate.testing.transaction.TransactionUtil.doInHibernate;
 import static org.junit.Assert.assertEquals;
 
 /**
@@ -76,6 +76,9 @@ public class BitSetTypeTest extends BaseCoreFunctionalTestCase {
 			return id;
 		}
 
+		//Getters and setters are omitted for brevity
+	//end::basic-custom-type-BitSetType-mapping-example[]
+
 		public void setId(Integer id) {
 			this.id = id;
 		}
@@ -87,6 +90,7 @@ public class BitSetTypeTest extends BaseCoreFunctionalTestCase {
 		public void setBitSet(BitSet bitSet) {
 			this.bitSet = bitSet;
 		}
+	//tag::basic-custom-type-BitSetType-mapping-example[]
 	}
 	//end::basic-custom-type-BitSetType-mapping-example[]
 }

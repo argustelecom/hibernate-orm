@@ -6,7 +6,9 @@
  */
 package org.hibernate.envers.query;
 
+import org.hibernate.Incubating;
 import org.hibernate.envers.boot.internal.EnversService;
+import org.hibernate.envers.exception.NotAuditedException;
 import org.hibernate.envers.internal.reader.AuditReaderImplementor;
 import org.hibernate.envers.query.internal.impl.EntitiesAtRevisionQuery;
 import org.hibernate.envers.query.internal.impl.EntitiesModifiedAtRevisionQuery;
@@ -20,6 +22,7 @@ import static org.hibernate.envers.internal.tools.EntityTools.getTargetClassIfPr
  * @author Adam Warski (adam at warski dot org)
  * @author HernпїЅn Chanfreau
  * @author Lukasz Antoniak (lukasz dot antoniak at gmail dot com)
+ * @author Chris Cranford
  */
 public class AuditQueryCreator {
 	private final EnversService enversService;
@@ -45,6 +48,7 @@ public class AuditQueryCreator {
 		checkNotNull( revision, "Entity revision" );
 		checkPositive( revision, "Entity revision" );
 		c = getTargetClassIfProxied( c );
+		checkEntityAudited( c.getName() );
 		return new EntitiesAtRevisionQuery( enversService, auditReaderImplementor, c, revision, false );
 	}
 
@@ -82,6 +86,7 @@ public class AuditQueryCreator {
 		checkNotNull( revision, "Entity revision" );
 		checkPositive( revision, "Entity revision" );
 		c = getTargetClassIfProxied( c );
+		checkEntityAudited( entityName );
 		return new EntitiesAtRevisionQuery(
 				enversService,
 				auditReaderImplementor,
@@ -111,6 +116,7 @@ public class AuditQueryCreator {
 		checkNotNull( revision, "Entity revision" );
 		checkPositive( revision, "Entity revision" );
 		c = getTargetClassIfProxied( c );
+		checkEntityAudited( entityName );
 		return new EntitiesModifiedAtRevisionQuery( enversService, auditReaderImplementor, c, entityName, revision );
 	}
 
@@ -132,6 +138,7 @@ public class AuditQueryCreator {
 		checkNotNull( revision, "Entity revision" );
 		checkPositive( revision, "Entity revision" );
 		c = getTargetClassIfProxied( c );
+		checkEntityAudited( c.getName() );
 		return new EntitiesModifiedAtRevisionQuery( enversService, auditReaderImplementor, c, revision );
 	}
 
@@ -159,12 +166,15 @@ public class AuditQueryCreator {
 	 */
 	public AuditQuery forRevisionsOfEntity(Class<?> c, boolean selectEntitiesOnly, boolean selectDeletedEntities) {
 		c = getTargetClassIfProxied( c );
+		checkEntityAudited( c.getName() );
 		return new RevisionsOfEntityQuery(
 				enversService,
 				auditReaderImplementor,
 				c,
 				selectEntitiesOnly,
-				selectDeletedEntities
+				selectDeletedEntities,
+				false,
+				false
 		);
 	}
 
@@ -197,13 +207,147 @@ public class AuditQueryCreator {
 			boolean selectEntitiesOnly,
 			boolean selectDeletedEntities) {
 		c = getTargetClassIfProxied( c );
+		checkEntityAudited( entityName );
 		return new RevisionsOfEntityQuery(
 				enversService,
 				auditReaderImplementor,
 				c,
 				entityName,
 				selectEntitiesOnly,
-				selectDeletedEntities
+				selectDeletedEntities,
+				false,
+				false
 		);
+	}
+
+	/**
+	 * Creates a query that selects the revision entities associated with the specified entity.  You may also
+	 * specify whether the revision entities list should include those for deletions of the entity class.
+	 *
+	 * @param clazz Class of the entities for which to query.
+	 * @param selectDeletedEntities If true, the result will include revision entities where deletions occurred.
+	 *
+	 * @return A query of revision entities based on the specified entity class.  The results of the query will
+	 * 		   be stored in ascending order by the revision number unless an order is specified.
+	 *
+	 * @since 5.3
+	 */
+	@Incubating
+	public AuditQuery forRevisionsOfEntity(Class<?> clazz, boolean selectDeletedEntities) {
+		clazz = getTargetClassIfProxied( clazz );
+		return new RevisionsOfEntityQuery(
+				enversService,
+				auditReaderImplementor,
+				clazz,
+				false,
+				selectDeletedEntities,
+				true,
+				false
+		);
+	}
+
+	/**
+	 * Creates a query that selects the revision entities associated with the specified entity.  You may also
+	 * specify whether the revision entities list should include those for deletions of the entity class.
+	 *
+	 * @param clazz Class of the entities for which to query.
+	 * @param entityName Name of the entity (for cases where it cannot be guessed based on class clazz).
+	 * @param selectDeletedEntities If true, the result will include revision entities where deletions occurred.
+	 *
+	 * @return A query of revision entities based on the specified entity class.  The results of the query will
+	 * 		   be stored in ascending order by the revision number unless an order is specified.
+	 *
+	 * @since 5.3
+	 */
+	@Incubating
+	public AuditQuery forRevisionsOfEntity(Class<?> clazz, String entityName, boolean selectDeletedEntities) {
+		clazz = getTargetClassIfProxied( clazz );
+		return new RevisionsOfEntityQuery(
+				enversService,
+				auditReaderImplementor,
+				clazz,
+				entityName,
+				false,
+				selectDeletedEntities,
+				true,
+				false
+		);
+	}
+
+	/**
+	 * Creates a query that selects the revisions at which the given entity was modified.  Unless a
+	 * projection is set, the result will be a list of 4-element arrays, containing the following:
+	 * <ol>
+	 *     <li>The entity instance</li>
+	 *     <li>Revision entity, corresponding to the revision where the entity was modified.  If no custom
+	 *     revision entity is used, this will be an instance of {@link org.hibernate.envers.DefaultRevisionEntity}.</li>
+	 *     <li>The revision type, an enum of class {@link org.hibernate.envers.RevisionType}.</li>
+	 *     <li>The names of the properties changed in this revision</li>
+	 * </ol>
+	 * Additional criterion may be specified to filter the result set.
+	 *
+	 * @param clazz Class of the entities for which to query.
+	 * @param selectDeletedEntities If true, the result set will include revisions where entities were deleted.
+	 *
+	 * @return the audit query
+	 *
+	 * @since 5.3
+	 */
+	@Incubating
+	public AuditQuery forRevisionsOfEntityWithChanges(Class<?> clazz, boolean selectDeletedEntities) {
+		clazz = getTargetClassIfProxied( clazz );
+		return new RevisionsOfEntityQuery(
+				enversService,
+				auditReaderImplementor,
+				clazz,
+				false,
+				selectDeletedEntities,
+				false,
+				true
+		);
+	}
+
+	/**
+	 * Creates a query that selects the revisions at which the given entity was modified.  Unless a
+	 * projection is set, the result will be a list of 4-element arrays, containing the following:
+	 * <ol>
+	 *     <li>The entity instance</li>
+	 *     <li>Revision entity, corresponding to the revision where the entity was modified.  If no custom
+	 *     revision entity is used, this will be an instance of {@link org.hibernate.envers.DefaultRevisionEntity}.</li>
+	 *     <li>The revision type, an enum of class {@link org.hibernate.envers.RevisionType}.</li>
+	 *     <li>The names of the properties changed in this revision</li>
+	 * </ol>
+	 * Additional criterion may be specified to filter the result set.
+	 *
+	 * @param clazz Class of the entities for which to query.
+	 * @param entityName Name of the entity (if it can't be guessed basing on the {@code clazz}).
+	 * @param selectDeletedEntities If true, the result set will include revisions where entities were deleted.
+	 *
+	 * @return the audit query
+	 *
+	 * @since 5.3
+	 */
+	@Incubating
+	public AuditQuery forRevisionsOfEntityWithChanges(Class<?> clazz, String entityName, boolean selectDeletedEntities) {
+		clazz = getTargetClassIfProxied( clazz );
+		return new RevisionsOfEntityQuery(
+				enversService,
+				auditReaderImplementor,
+				clazz,
+				entityName,
+				false,
+				selectDeletedEntities,
+				false,
+				true
+		);
+	}
+
+	private void checkEntityAudited(String entityName) {
+		if ( !auditReaderImplementor.isEntityNameAudited( entityName ) ) {
+			throw new NotAuditedException(
+					entityName,
+					"Cannot query audit history on a non-audited entity [" + entityName + "]."
+			);
+		}
 	}
 }

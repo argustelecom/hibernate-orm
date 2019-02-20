@@ -12,13 +12,14 @@ import java.util.HashMap;
 import java.util.Map;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
-import javax.persistence.spi.PersistenceUnitTransactionType;
 import javax.transaction.SystemException;
 
 import org.hibernate.boot.registry.internal.StandardServiceRegistryImpl;
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.H2Dialect;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.engine.spi.SessionImplementor;
 import org.hibernate.engine.transaction.internal.jta.JtaStatusHelper;
 import org.hibernate.envers.AuditReader;
 import org.hibernate.envers.AuditReaderFactory;
@@ -26,33 +27,27 @@ import org.hibernate.envers.boot.internal.EnversIntegrator;
 import org.hibernate.envers.configuration.EnversSettings;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.jpa.AvailableSettings;
-import org.hibernate.jpa.HibernateEntityManagerFactory;
 import org.hibernate.jpa.boot.internal.EntityManagerFactoryBuilderImpl;
 import org.hibernate.jpa.boot.spi.Bootstrap;
 import org.hibernate.jpa.boot.spi.PersistenceUnitDescriptor;
-import org.hibernate.jpa.internal.EntityManagerImpl;
 import org.hibernate.jpa.test.PersistenceUnitDescriptorAdapter;
-
 import org.hibernate.testing.AfterClassOnce;
 import org.hibernate.testing.BeforeClassOnce;
 import org.hibernate.testing.jta.TestingJtaPlatformImpl;
 import org.hibernate.testing.junit4.Helper;
-
-import org.junit.After;
-
 import org.jboss.logging.Logger;
+import org.junit.After;
 
 /**
  * @author Strong Liu (stliu@hibernate.org)
  */
 public abstract class BaseEnversJPAFunctionalTestCase extends AbstractEnversTest {
-	private static final Logger log = Logger.getLogger( BaseEnversJPAFunctionalTestCase.class );
 
 	private static final Dialect dialect = Dialect.getDialect();
 
 	private EntityManagerFactoryBuilderImpl entityManagerFactoryBuilder;
 	private StandardServiceRegistryImpl serviceRegistry;
-	private HibernateEntityManagerFactory entityManagerFactory;
+	private SessionFactoryImplementor entityManagerFactory;
 
 	private EntityManager em;
 	private AuditReader auditReader;
@@ -83,10 +78,9 @@ public abstract class BaseEnversJPAFunctionalTestCase extends AbstractEnversTest
 				buildPersistenceUnitDescriptor(),
 				buildSettings()
 		);
-		entityManagerFactory = entityManagerFactoryBuilder.build().unwrap( HibernateEntityManagerFactory.class );
+		entityManagerFactory = entityManagerFactoryBuilder.build().unwrap( SessionFactoryImplementor.class );
 
-		serviceRegistry = (StandardServiceRegistryImpl) entityManagerFactory.getSessionFactory()
-				.getServiceRegistry()
+		serviceRegistry = (StandardServiceRegistryImpl) entityManagerFactory.getServiceRegistry()
 				.getParentServiceRegistry();
 
 		afterEntityManagerFactoryBuilt();
@@ -154,7 +148,7 @@ public abstract class BaseEnversJPAFunctionalTestCase extends AbstractEnversTest
 	protected void addMappings(Map settings) {
 		String[] mappings = getMappings();
 		if ( mappings != null ) {
-			settings.put( AvailableSettings.HBXML_FILES, StringHelper.join( ",", mappings ) );
+			settings.put( AvailableSettings.HBXML_FILES, String.join( ",", mappings ) );
 		}
 	}
 
@@ -266,28 +260,10 @@ public abstract class BaseEnversJPAFunctionalTestCase extends AbstractEnversTest
 	}
 
 	protected AuditReader getAuditReader() {
-		EntityManager entityManager = getOrCreateEntityManager();
-		PersistenceUnitTransactionType transactionType = ((EntityManagerImpl) entityManager).getTransactionType();
-
-		if ( transactionType == PersistenceUnitTransactionType.JTA ) {
-			if ( !JtaStatusHelper.isActive( TestingJtaPlatformImpl.INSTANCE.getTransactionManager() ) ) {
-				try {
-					TestingJtaPlatformImpl.INSTANCE.getTransactionManager().begin();
-				}
-				catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-		}
-		else if ( !entityManager.getTransaction().isActive() ) {
-			entityManager.getTransaction().begin();
-		}
-
 		if ( auditReader != null ) {
 			return auditReader;
 		}
-
-		return auditReader = AuditReaderFactory.get( entityManager );
+		return auditReader = AuditReaderFactory.get( getOrCreateEntityManager() );
 	}
 
 	protected EntityManager createIsolatedEntityManager() {

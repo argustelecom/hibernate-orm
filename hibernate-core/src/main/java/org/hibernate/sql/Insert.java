@@ -9,6 +9,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.hibernate.MappingException;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.type.LiteralType;
 
@@ -95,7 +96,18 @@ public class Insert {
 		buf.append("insert into ")
 			.append(tableName);
 		if ( columns.size()==0 ) {
-			buf.append(' ').append( dialect.getNoColumnsInsertString() );
+			if ( dialect.supportsNoColumnsInsert() ) {
+				buf.append( ' ' ).append( dialect.getNoColumnsInsertString() );
+			}
+			else {
+				throw new MappingException(
+						String.format(
+								"The INSERT statement for table [%s] contains no column, and this is not supported by [%s]",
+								tableName,
+								dialect
+						)
+				);
+			}
 		}
 		else {
 			buf.append(" (");

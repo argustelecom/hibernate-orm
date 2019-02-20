@@ -24,7 +24,7 @@ import org.hibernate.jpa.test.BaseEntityManagerFunctionalTestCase;
 import org.junit.Assert;
 import org.junit.Test;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 /**
  * @author Vlad Mihalcea
@@ -71,15 +71,18 @@ public class ElementCollectionMapTest extends BaseEntityManagerFunctionalTestCas
 
 		@Id
 		private Long id;
+
 		@Temporal(TemporalType.TIMESTAMP)
 		@ElementCollection
 		@CollectionTable(name = "phone_register")
 		@Column(name = "since")
-		@MapKeyJoinColumn(name = "phone_id", referencedColumnName = "id")
 		private Map<Phone, Date> phoneRegister = new HashMap<>();
 
-		public Person() {
-		}
+		//Getters and setters are omitted for brevity
+
+	//end::collections-map-value-type-entity-key-example[]
+
+		public Person() {}
 
 		public Person(Long id) {
 			this.id = id;
@@ -88,6 +91,7 @@ public class ElementCollectionMapTest extends BaseEntityManagerFunctionalTestCas
 		public Map<Phone, Date> getPhoneRegister() {
 			return phoneRegister;
 		}
+	//tag::collections-map-value-type-entity-key-example[]
 	}
 
 	@Embeddable
@@ -97,6 +101,10 @@ public class ElementCollectionMapTest extends BaseEntityManagerFunctionalTestCas
 
 		@Column(name = "`number`")
 		private String number;
+
+		//Getters and setters are omitted for brevity
+
+	//end::collections-map-value-type-entity-key-example[]
 
 		public Phone() {
 		}
@@ -113,6 +121,7 @@ public class ElementCollectionMapTest extends BaseEntityManagerFunctionalTestCas
 		public String getNumber() {
 			return number;
 		}
+	//tag::collections-map-value-type-entity-key-example[]
 	}
 	//end::collections-map-value-type-entity-key-example[]
 }

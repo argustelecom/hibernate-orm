@@ -12,8 +12,10 @@ import org.hibernate.HibernateException;
 import org.hibernate.PropertyValueException;
 import org.hibernate.bytecode.enhance.spi.LazyPropertyInitializer;
 import org.hibernate.engine.spi.CascadingActions;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.persister.entity.EntityPersister;
+import org.hibernate.tuple.GenerationTiming;
+import org.hibernate.tuple.InMemoryValueGenerationStrategy;
 import org.hibernate.type.CollectionType;
 import org.hibernate.type.CompositeType;
 import org.hibernate.type.Type;
@@ -24,7 +26,7 @@ import org.hibernate.type.Type;
  * @author Gavin King
  */
 public final class Nullability {
-	private final SessionImplementor session;
+	private final SharedSessionContractImplementor session;
 	private final boolean checkNullability;
 
 	/**
@@ -32,9 +34,9 @@ public final class Nullability {
 	 *
 	 * @param session The session
 	 */
-	public Nullability(SessionImplementor session) {
+	public Nullability(SharedSessionContractImplementor session) {
 		this.session = session;
-		this.checkNullability = session.getFactory().getSettings().isCheckNullability();
+		this.checkNullability = session.getFactory().getSessionFactoryOptions().isCheckNullability();
 	}
 	/**
 	 * Check nullability of the class persister properties
@@ -49,7 +51,21 @@ public final class Nullability {
 	public void checkNullability(
 			final Object[] values,
 			final EntityPersister persister,
-			final boolean isUpdate) throws HibernateException {
+			final boolean isUpdate) {
+		checkNullability( values, persister, isUpdate ? NullabilityCheckType.UPDATE : NullabilityCheckType.CREATE );
+	}
+
+	public enum NullabilityCheckType {
+		CREATE,
+		UPDATE,
+		DELETE
+	}
+
+	public void checkNullability(
+			final Object[] values,
+			final EntityPersister persister,
+			final NullabilityCheckType checkType) {
+
 		/*
 		 * Typically when Bean Validation is on, we don't want to validate null values
 		 * at the Hibernate Core level. Hence the checkNullability setting.
@@ -60,7 +76,7 @@ public final class Nullability {
 			  * Check for any level one nullability breaks
 			  * Look at non null components to
 			  *   recursively check next level of nullability breaks
-			  * Look at Collections contraining component to
+			  * Look at Collections containing components to
 			  *   recursively check next level of nullability breaks
 			  *
 			  *
@@ -74,17 +90,20 @@ public final class Nullability {
 			  */
 
 			final boolean[] nullability = persister.getPropertyNullability();
-			final boolean[] checkability = isUpdate ?
-				persister.getPropertyUpdateability() :
-				persister.getPropertyInsertability();
+			final boolean[] checkability = checkType == NullabilityCheckType.CREATE
+					? persister.getPropertyInsertability()
+					: persister.getPropertyUpdateability();
 			final Type[] propertyTypes = persister.getPropertyTypes();
+			final InMemoryValueGenerationStrategy[] inMemoryValueGenerationStrategies =
+					persister.getEntityMetamodel().getInMemoryValueGenerationStrategies();
 
 			for ( int i = 0; i < values.length; i++ ) {
 
-				if ( checkability[i] && values[i]!= LazyPropertyInitializer.UNFETCHED_PROPERTY ) {
+				if ( checkability[i] &&
+						values[i] != LazyPropertyInitializer.UNFETCHED_PROPERTY &&
+						GenerationTiming.NEVER == inMemoryValueGenerationStrategies[i].getGenerationTiming() ) {
 					final Object value = values[i];
 					if ( !nullability[i] && value == null ) {
-
 						//check basic level one nullablilty
 						throw new PropertyValueException(
 								"not-null property references a null or transient value",

@@ -10,11 +10,8 @@ import org.hibernate.boot.model.TypeContributions;
 import org.hibernate.cfg.Environment;
 import org.hibernate.dialect.identity.IdentityColumnSupport;
 import org.hibernate.dialect.identity.Oracle12cIdentityColumnSupport;
-import org.hibernate.dialect.pagination.LimitHandler;
-import org.hibernate.dialect.pagination.SQL2008StandardLimitHandler;
 import org.hibernate.engine.config.spi.ConfigurationService;
 import org.hibernate.engine.config.spi.StandardConverters;
-import org.hibernate.id.enhanced.SequenceStyleGenerator;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.type.MaterializedBlobType;
 import org.hibernate.type.WrappedMaterializedBlobType;
@@ -57,13 +54,8 @@ public class Oracle12cDialect extends Oracle10gDialect {
 	}
 
 	@Override
-	public LimitHandler getLimitHandler() {
-		return SQL2008StandardLimitHandler.INSTANCE;
-	}
-
-	@Override
-	public Class getNativeIdentifierGeneratorClass() {
-		return SequenceStyleGenerator.class;
+	public String getNativeIdentifierGeneratorStrategy() {
+		return "sequence";
 	}
 
 	@Override

@@ -21,14 +21,12 @@ import org.junit.Test;
 
 import org.jboss.logging.Logger;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 /**
  * @author Vlad Mihalcea
  */
 public class ManyToManyUnidirectionalTest extends BaseEntityManagerFunctionalTestCase {
-
-	private static final Logger log = Logger.getLogger( ManyToManyUnidirectionalTest.class );
 
 	@Override
 	protected Class<?>[] getAnnotatedClasses() {
@@ -98,8 +96,13 @@ public class ManyToManyUnidirectionalTest extends BaseEntityManagerFunctionalTes
 		@Id
 		@GeneratedValue
 		private Long id;
+
 		@ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
 		private List<Address> addresses = new ArrayList<>();
+
+		//Getters and setters are omitted for brevity
+
+	//end::associations-many-to-many-unidirectional-example[]
 
 		public Person() {
 		}
@@ -107,6 +110,7 @@ public class ManyToManyUnidirectionalTest extends BaseEntityManagerFunctionalTes
 		public List<Address> getAddresses() {
 			return addresses;
 		}
+	//tag::associations-many-to-many-unidirectional-example[]
 	}
 
 	@Entity(name = "Address")
@@ -120,6 +124,10 @@ public class ManyToManyUnidirectionalTest extends BaseEntityManagerFunctionalTes
 
 		@Column(name = "`number`")
 		private String number;
+
+		//Getters and setters are omitted for brevity
+
+	//end::associations-many-to-many-unidirectional-example[]
 
 		public Address() {
 		}
@@ -140,6 +148,7 @@ public class ManyToManyUnidirectionalTest extends BaseEntityManagerFunctionalTes
 		public String getNumber() {
 			return number;
 		}
+	//tag::associations-many-to-many-unidirectional-example[]
 	}
 	//end::associations-many-to-many-unidirectional-example[]
 }

@@ -28,7 +28,7 @@ In this case, you do _not_ need to call `addEntity()` anymore.
 ----
 List people = session
     .getNamedQuery( "persons" )
-    .setString( "namePattern", namePattern )
+    .setParameter( "namePattern", namePattern )
     .setMaxResults( 50 )
     .list();
 ----
@@ -102,7 +102,7 @@ You can externalize the resultset mapping information in a `<resultset>` element
 ----
 ====
 
-You can, alternatively, use the resultset mapping information in your hbm files directly in java code.
+You can, alternatively, use the resultset mapping information in your hbm files directly in Java code.
 
 .Programmatically specifying the result mapping information
 ====
@@ -267,7 +267,7 @@ The following example shows how to define custom SQL operations using annotation
 
 [NOTE]
 ====
-If you expect to call a store procedure, be sure to set the `callable` attribute to `true`, in annotations as well as in xml.
+If you expect to call a stored procedure, be sure to set the `callable` attribute to `true` in both annotation and XML-based mappings.
 ====
 
 To check that the execution happens correctly, Hibernate allows you to define one of those three strategies:

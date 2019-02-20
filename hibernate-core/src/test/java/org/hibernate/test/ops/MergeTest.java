@@ -6,6 +6,7 @@
  */
 package org.hibernate.test.ops;
 
+import javax.persistence.PersistenceException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -18,7 +19,13 @@ import org.hibernate.Session;
 import org.hibernate.StaleObjectStateException;
 import org.hibernate.Transaction;
 import org.hibernate.criterion.Projections;
+import org.hibernate.dialect.AbstractHANADialect;
 
+import org.hibernate.testing.DialectChecks;
+import org.hibernate.testing.RequiresDialectFeature;
+import org.hibernate.testing.SkipForDialect;
+
+import static org.hibernate.testing.junit4.ExtraAssertions.assertTyping;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotSame;
@@ -29,6 +36,7 @@ import static org.junit.Assert.fail;
 /**
  * @author Gavin King
  */
+@RequiresDialectFeature(DialectChecks.SupportsNoColumnInsert.class)
 public class MergeTest extends AbstractOperationTestCase {
 	@Test
 	public void testMergeStaleVersionFails() throws Exception {
@@ -55,8 +63,9 @@ public class MergeTest extends AbstractOperationTestCase {
 			s.getTransaction().commit();
 			fail( "was expecting staleness error" );
 		}
-		catch ( StaleObjectStateException expected ) {
-			// expected outcome...
+		catch (PersistenceException e){
+			// expected
+			assertTyping( StaleObjectStateException.class, e.getCause());
 		}
 		finally {
 			s.getTransaction().rollback();
@@ -719,6 +728,7 @@ public class MergeTest extends AbstractOperationTestCase {
 
 	@Test
 	@SuppressWarnings( {"unchecked"})
+	@SkipForDialect(value = AbstractHANADialect.class, comment = " HANA doesn't support tables consisting of only a single auto-generated column")
 	public void testRecursiveMergeTransient() {
 		Session s = openSession();
 		Transaction tx = s.beginTransaction();
@@ -765,6 +775,7 @@ public class MergeTest extends AbstractOperationTestCase {
 
 	@SuppressWarnings( {"unchecked"})
 	@Test
+	@SkipForDialect(value = AbstractHANADialect.class, comment = " HANA doesn't support tables consisting of only a single auto-generated column")
 	public void testMergeManyToManyWithCollectionDeference() throws Exception {
 		// setup base data...
 		Session s = openSession();

@@ -6,12 +6,17 @@
  */
 package org.hibernate.engine.jdbc.env.internal;
 
+import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import org.hibernate.boot.model.naming.Identifier;
 import org.hibernate.boot.registry.selector.spi.StrategySelector;
@@ -34,6 +39,8 @@ import org.hibernate.exception.internal.SQLStateConversionDelegate;
 import org.hibernate.exception.internal.StandardSQLExceptionConverter;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.service.spi.ServiceRegistryImplementor;
+import org.hibernate.tool.schema.extract.spi.ExtractionContext;
+import org.hibernate.tool.schema.extract.spi.SequenceInformation;
 
 import org.jboss.logging.Logger;
 
@@ -62,7 +69,7 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 	 * @param serviceRegistry The service registry
 	 * @param dialect The resolved dialect.
 	 */
-	public JdbcEnvironmentImpl(ServiceRegistryImplementor serviceRegistry, Dialect dialect) {
+	public JdbcEnvironmentImpl(final ServiceRegistryImplementor serviceRegistry, Dialect dialect) {
 		this.dialect = dialect;
 
 		final ConfigurationService cfgService = serviceRegistry.getService( ConfigurationService.class );
@@ -75,17 +82,19 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 		this.nameQualifierSupport = nameQualifierSupport;
 
 		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect, logWarnings( cfgService, dialect ) );
-		this.extractedMetaDataSupport = new ExtractedDatabaseMetaDataImpl.Builder( this ).build();
 
 		final IdentifierHelperBuilder identifierHelperBuilder = IdentifierHelperBuilder.from( this );
 		identifierHelperBuilder.setGloballyQuoteIdentifiers( globalQuoting( cfgService ) );
-		identifierHelperBuilder.setSkipGlobalQuotingForColumnDefinitions( globalQuotingSkippedForColumnDefinitions( cfgService ) );
+		identifierHelperBuilder.setSkipGlobalQuotingForColumnDefinitions( globalQuotingSkippedForColumnDefinitions(
+				cfgService ) );
 		identifierHelperBuilder.setAutoQuoteKeywords( autoKeywordQuoting( cfgService ) );
 		identifierHelperBuilder.setNameQualifierSupport( nameQualifierSupport );
 
 		IdentifierHelper identifierHelper = null;
+		ExtractedDatabaseMetaDataImpl.Builder dbMetaDataBuilder = new ExtractedDatabaseMetaDataImpl.Builder( this );
 		try {
 			identifierHelper = dialect.buildIdentifierHelper( identifierHelperBuilder, null );
+			dbMetaDataBuilder.setSupportsNamedParameters( dialect.supportsNamedParameters( null ) );
 		}
 		catch (SQLException sqle) {
 			// should never ever happen
@@ -95,6 +104,8 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 			identifierHelper = identifierHelperBuilder.build();
 		}
 		this.identifierHelper = identifierHelper;
+
+		this.extractedMetaDataSupport = dbMetaDataBuilder.build();
 
 		this.currentCatalog = identifierHelper.toIdentifier(
 				cfgService.getSetting( AvailableSettings.DEFAULT_CATALOG, StandardConverters.STRING )
@@ -150,10 +161,6 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 
 		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect, false );
 
-		this.extractedMetaDataSupport = new ExtractedDatabaseMetaDataImpl.Builder( this )
-				.apply( databaseMetaData )
-				.build();
-
 		NameQualifierSupport nameQualifierSupport = dialect.getNameQualifierSupport();
 		if ( nameQualifierSupport == null ) {
 			nameQualifierSupport = determineNameQualifierSupport( databaseMetaData );
@@ -174,6 +181,12 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 			identifierHelper = identifierHelperBuilder.build();
 		}
 		this.identifierHelper = identifierHelper;
+
+		this.extractedMetaDataSupport = new ExtractedDatabaseMetaDataImpl.Builder( this )
+				.apply( databaseMetaData )
+				.setSupportsNamedParameters( databaseMetaData.supportsNamedParameters() )
+				.setSequenceInformationList( sequenceInformationList( databaseMetaData.getConnection() ) )
+				.build();
 
 		this.currentCatalog = null;
 		this.currentSchema = null;
@@ -223,11 +236,6 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 
 		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect, logWarnings( cfgService, dialect ) );
 
-		this.extractedMetaDataSupport = new ExtractedDatabaseMetaDataImpl.Builder( this )
-				.apply( databaseMetaData )
-				.setConnectionSchemaName( determineCurrentSchemaName( databaseMetaData, serviceRegistry, dialect ) )
-				.build();
-
 		NameQualifierSupport nameQualifierSupport = dialect.getNameQualifierSupport();
 		if ( nameQualifierSupport == null ) {
 			nameQualifierSupport = determineNameQualifierSupport( databaseMetaData );
@@ -236,7 +244,8 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 
 		final IdentifierHelperBuilder identifierHelperBuilder = IdentifierHelperBuilder.from( this );
 		identifierHelperBuilder.setGloballyQuoteIdentifiers( globalQuoting( cfgService ) );
-		identifierHelperBuilder.setSkipGlobalQuotingForColumnDefinitions( globalQuotingSkippedForColumnDefinitions( cfgService ) );
+		identifierHelperBuilder.setSkipGlobalQuotingForColumnDefinitions( globalQuotingSkippedForColumnDefinitions(
+				cfgService ) );
 		identifierHelperBuilder.setAutoQuoteKeywords( autoKeywordQuoting( cfgService ) );
 		identifierHelperBuilder.setNameQualifierSupport( nameQualifierSupport );
 		IdentifierHelper identifierHelper = null;
@@ -252,6 +261,13 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 		}
 		this.identifierHelper = identifierHelper;
 
+		this.extractedMetaDataSupport = new ExtractedDatabaseMetaDataImpl.Builder( this )
+				.apply( databaseMetaData )
+				.setConnectionSchemaName( determineCurrentSchemaName( databaseMetaData, serviceRegistry, dialect ) )
+				.setSupportsNamedParameters( dialect.supportsNamedParameters( databaseMetaData ) )
+				.setSequenceInformationList( sequenceInformationList( databaseMetaData.getConnection() ) )
+				.build();
+
 		// and that current-catalog and current-schema happen after it
 		this.currentCatalog = identifierHelper.toIdentifier( extractedMetaDataSupport.getConnectionCatalogName() );
 		this.currentSchema = identifierHelper.toIdentifier( extractedMetaDataSupport.getConnectionSchemaName() );
@@ -264,6 +280,7 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 		this.typeInfoSet.addAll( TypeInfo.extractTypeInfo( databaseMetaData ) );
 
 		this.lobCreatorBuilder = LobCreatorBuilderImpl.makeLobCreatorBuilder(
+				dialect,
 				cfgService.getSettings(),
 				databaseMetaData.getConnection()
 		);
@@ -277,7 +294,8 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 			Dialect dialect) throws SQLException {
 		final SchemaNameResolver schemaNameResolver;
 
-		final Object setting = serviceRegistry.getService( ConfigurationService.class ).getSettings().get( SCHEMA_NAME_RESOLVER );
+		final Object setting = serviceRegistry.getService( ConfigurationService.class ).getSettings().get(
+				SCHEMA_NAME_RESOLVER );
 		if ( setting == null ) {
 			schemaNameResolver = dialect.getSchemaNameResolver();
 		}
@@ -293,7 +311,7 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 			return schemaNameResolver.resolveSchemaName( databaseMetaData.getConnection(), dialect );
 		}
 		catch (Exception e) {
-			// for now, just ignore the exception.
+			log.debug( "Unable to resolve connection default schema", e );
 			return null;
 		}
 	}
@@ -369,5 +387,39 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Get the sequence information List from the database.
+	 *
+	 * @param connection database connection
+	 * @return sequence information List
+	 */
+	private List<SequenceInformation> sequenceInformationList(final Connection connection) {
+		try {
+
+			Iterable<SequenceInformation> sequenceInformationIterable = dialect
+				.getSequenceInformationExtractor()
+				.extractMetadata( new ExtractionContext.EmptyExtractionContext() {
+					@Override
+					public Connection getJdbcConnection() {
+						return connection;
+					}
+
+					@Override
+					public JdbcEnvironment getJdbcEnvironment() {
+						return JdbcEnvironmentImpl.this;
+					}
+				}
+			);
+
+			return StreamSupport.stream( sequenceInformationIterable.spliterator(), false )
+					.collect( Collectors.toList() );
+		}
+		catch (SQLException e) {
+			log.error( "Could not fetch the SequenceInformation from the database", e );
+		}
+
+		return Collections.emptyList();
 	}
 }

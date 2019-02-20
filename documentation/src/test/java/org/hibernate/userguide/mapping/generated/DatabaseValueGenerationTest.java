@@ -22,7 +22,7 @@ import org.hibernate.tuple.ValueGenerator;
 
 import org.junit.Test;
 
-import static org.hibernate.userguide.util.TransactionUtil.doInJPA;
+import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 /**
  * @author Vlad Mihalcea
@@ -56,6 +56,9 @@ public class DatabaseValueGenerationTest extends BaseEntityManagerFunctionalTest
 		@FunctionCreationTimestamp
 		private Date timestamp;
 
+		//Constructors, getters, and setters are omitted for brevity
+	//end::mapping-database-generated-value-example[]
+
 		public Event() {}
 
 		public Long getId() {
@@ -65,7 +68,11 @@ public class DatabaseValueGenerationTest extends BaseEntityManagerFunctionalTest
 		public Date getTimestamp() {
 			return timestamp;
 		}
+	//tag::mapping-database-generated-value-example[]
 	}
+	//end::mapping-database-generated-value-example[]
+
+	//tag::mapping-database-generated-value-example[]
 
 	@ValueGenerationType(generatedBy = FunctionCreationValueGeneration.class)
 	@Retention(RetentionPolicy.RUNTIME)

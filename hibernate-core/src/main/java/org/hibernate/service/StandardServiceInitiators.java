@@ -25,12 +25,14 @@ import org.hibernate.engine.jdbc.internal.JdbcServicesInitiator;
 import org.hibernate.engine.jndi.internal.JndiServiceInitiator;
 import org.hibernate.engine.transaction.jta.platform.internal.JtaPlatformInitiator;
 import org.hibernate.engine.transaction.jta.platform.internal.JtaPlatformResolverInitiator;
+import org.hibernate.event.internal.EntityCopyObserverFactoryInitiator;
 import org.hibernate.hql.internal.QueryTranslatorFactoryInitiator;
 import org.hibernate.id.factory.internal.MutableIdentifierGeneratorFactoryInitiator;
 import org.hibernate.jmx.internal.JmxServiceInitiator;
 import org.hibernate.persister.internal.PersisterClassResolverInitiator;
 import org.hibernate.persister.internal.PersisterFactoryInitiator;
 import org.hibernate.property.access.internal.PropertyAccessStrategyResolverInitiator;
+import org.hibernate.resource.beans.spi.ManagedBeanRegistryInitiator;
 import org.hibernate.resource.transaction.internal.TransactionCoordinatorBuilderInitiator;
 import org.hibernate.service.internal.SessionFactoryServiceRegistryFactoryInitiator;
 import org.hibernate.tool.hbm2ddl.ImportSqlCommandExtractorInitiator;
@@ -48,7 +50,7 @@ public final class StandardServiceInitiators {
 	public static List<StandardServiceInitiator> LIST = buildStandardServiceInitiatorList();
 
 	private static List<StandardServiceInitiator> buildStandardServiceInitiatorList() {
-		final List<StandardServiceInitiator> serviceInitiators = new ArrayList<StandardServiceInitiator>();
+		final ArrayList<StandardServiceInitiator> serviceInitiators = new ArrayList<StandardServiceInitiator>();
 
 		serviceInitiators.add( CfgXmlAccessServiceInitiator.INSTANCE );
 		serviceInitiators.add( ConfigurationServiceInitiator.INSTANCE );
@@ -83,6 +85,11 @@ public final class StandardServiceInitiators {
 		serviceInitiators.add( RegionFactoryInitiator.INSTANCE );
 
 		serviceInitiators.add( TransactionCoordinatorBuilderInitiator.INSTANCE );
+
+		serviceInitiators.add( ManagedBeanRegistryInitiator.INSTANCE );
+		serviceInitiators.add( EntityCopyObserverFactoryInitiator.INSTANCE );
+
+		serviceInitiators.trimToSize();
 
 		return Collections.unmodifiableList( serviceInitiators );
 	}

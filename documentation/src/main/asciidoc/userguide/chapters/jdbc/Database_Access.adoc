@@ -18,8 +18,10 @@ Hibernate will internally determine which `ConnectionProvider` to use based on t
 3. else if any setting prefixed by `hibernate.c3p0.` is set -> <<database-connectionprovider-c3p0>>
 4. else if any setting prefixed by `hibernate.proxool.` is set -> <<database-connectionprovider-proxool>>
 5. else if any setting prefixed by `hibernate.hikari.` is set -> <<database-connectionprovider-hikari>>
-6. else if `hibernate.connection.url` is set -> <<database-connectionprovider-drivermanager>>
-7. else -> <<database-connectionprovider-provided>>
+6. else if any setting prefixed by `hibernate.vibur.` is set -> <<database-connectionprovider-vibur>>
+7. else if any setting prefixed by `hibernate.agroal.` is set -> <<database-connectionprovider-agroal>>
+8. else if `hibernate.connection.url` is set -> <<database-connectionprovider-drivermanager>>
+9. else -> <<database-connectionprovider-provided>>
 
 [[database-connectionprovider-datasource]]
 === Using DataSources
@@ -42,7 +44,7 @@ Otherwise, the no-arg form is used.
 
 [IMPORTANT]
 ====
-To use this integration, the application must include the hibernate-c3p0 module jar (as well as its dependencies) on the classpath.
+To use the c3p0 integration, the application must include the `hibernate-c3p0` module jar (as well as its dependencies) on the classpath.
 ====
 
 Hibernate also provides support for applications to use http://www.mchange.com/projects/c3p0/[c3p0] connection pooling.
@@ -57,7 +59,7 @@ Any settings prefixed with `hibernate.connection.` (other than the "special ones
 `hibernate.c3p0.max_size` or `c3p0.maxPoolSize`:: The maximum size of the c3p0 pool. See http://www.mchange.com/projects/c3p0/#maxPoolSize[c3p0 maxPoolSize]
 `hibernate.c3p0.timeout` or `c3p0.maxIdleTime`:: The Connection idle time. See http://www.mchange.com/projects/c3p0/#maxIdleTime[c3p0 maxIdleTime]
 `hibernate.c3p0.max_statements` or `c3p0.maxStatements`:: Controls the c3p0 PreparedStatement cache size (if using). See http://www.mchange.com/projects/c3p0/#maxStatements[c3p0 maxStatements]
-`hibernate.c3p0.acquire_increment` or `c3p0.acquireIncrement`:: Number of connections c3p0 should acquire at a time when pool is exhausted. See http://www.mchange.com/projects/c3p0/#acquireIncrement[c3p0 acquireIncrement]
+`hibernate.c3p0.acquire_increment` or `c3p0.acquireIncrement`:: Number of connections c3p0 should acquire at a time when the pool is exhausted. See http://www.mchange.com/projects/c3p0/#acquireIncrement[c3p0 acquireIncrement]
 `hibernate.c3p0.idle_test_period` or `c3p0.idleConnectionTestPeriod`:: Idle time before a c3p0 pooled connection is validated. See http://www.mchange.com/projects/c3p0/#idleConnectionTestPeriod[c3p0 idleConnectionTestPeriod]
 `hibernate.c3p0.initialPoolSize`:: The initial c3p0 pool size. If not specified, default is to use the min pool size. See http://www.mchange.com/projects/c3p0/#initialPoolSize[c3p0 initialPoolSize]
 Any other settings prefixed with `hibernate.c3p0.`:: Will have the `hibernate.` portion stripped and be passed to c3p0.
@@ -68,7 +70,7 @@ Any other settings prefixed with `c3p0.`:: Get passed to c3p0 as is. See http://
 
 [IMPORTANT]
 ====
-To use this integration, the application must include the hibernate-proxool module jar (as well as its dependencies) on the classpath.
+To use the Proxool integration, the application must include the `hibernate-proxool` module jar (as well as its dependencies) on the classpath.
 ====
 
 Hibernate also provides support for applications to use http://proxool.sourceforge.net/[Proxool] connection pooling.
@@ -76,31 +78,31 @@ Hibernate also provides support for applications to use http://proxool.sourcefor
 Transaction isolation of the Connections is managed by the `ConnectionProvider` itself. See <<database-connectionprovider-isolation>>.
 
 [[database-connectionprovider-proxool-existing]]
-=== Using existing Proxool pools
+==== Using existing Proxool pools
 
 Controlled by the `hibernate.proxool.existing_pool` setting.
 If set to true, this ConnectionProvider will use an already existing Proxool pool by alias as indicated by the `hibernate.proxool.pool_alias` setting.
 
 [[database-connectionprovider-proxool-jaxp]]
-=== Configuring Proxool via XML
+==== Configuring Proxool via XML
 
 The `hibernate.proxool.xml` setting names a Proxool configuration XML file to be loaded as a classpath resource and loaded by Proxool's JAXPConfigurator.
 See http://proxool.sourceforge.net/configure.html[proxool  configuration].
 `hibernate.proxool.pool_alias` must be set to indicate which pool to use.
 
 [[database-connectionprovider-proxool-properties]]
-=== Configuring Proxool via Properties
+==== Configuring Proxool via Properties
 
 The `hibernate.proxool.properties` setting names a Proxool configuration properties file to be loaded as a classpath resource and loaded by Proxool's `PropertyConfigurator`.
 See http://proxool.sourceforge.net/configure.html[proxool  configuration].
 `hibernate.proxool.pool_alias` must be set to indicate which pool to use.
 
 [[database-connectionprovider-hikari]]
-=== Using Hikari
+=== Using HikariCP
 
 [IMPORTANT]
 ====
-To use this integration, the application must include the hibernate-hikari module jar (as well as its dependencies) on the classpath.
+To use the HikariCP this integration, the application must include the `hibernate-hikari` module jar (as well as its dependencies) on the classpath.
 ====
 
 Hibernate also provides support for applications to use http://brettwooldridge.github.io/HikariCP/[Hikari] connection pool.
@@ -116,12 +118,52 @@ Additionally, this `ConnectionProvider` will pick up the following Hibernate-spe
 Note that Hikari only supports JDBC standard isolation levels (apparently).
 `hibernate.connection.autocommit`:: Mapped to Hikari's `autoCommit` setting
 
+[[database-connectionprovider-vibur]]
+=== Using Vibur DBCP
+
+[IMPORTANT]
+====
+To use the Vibur DBCP integration, the application must include the `hibernate-vibur` module jar (as well as its dependencies) on the classpath.
+====
+
+Hibernate also provides support for applications to use http://www.vibur.org/[Vibur DBCP] connection pool.
+
+Set all of your Vibur settings in Hibernate prefixed by `hibernate.vibur.` and this `ConnectionProvider` will pick them up and pass them along to Vibur DBCP.
+Additionally, this `ConnectionProvider` will pick up the following Hibernate-specific properties and map them to the corresponding Vibur ones (any `hibernate.vibur.` prefixed ones have precedence):
+
+`hibernate.connection.driver_class`:: Mapped to Vibur's `driverClassName` setting
+`hibernate.connection.url`:: Mapped to Vibur's `jdbcUrl` setting
+`hibernate.connection.username`:: Mapped to Vibur's `username` setting
+`hibernate.connection.password`:: Mapped to Vibur's `password` setting
+`hibernate.connection.isolation`:: Mapped to Vibur's `defaultTransactionIsolationValue` setting. See <<ConnectionProvider support for transaction isolation setting>>.
+`hibernate.connection.autocommit`:: Mapped to Vibur's `defaultAutoCommit` setting
+
+[[database-connectionprovider-agroal]]
+=== Using Agroal
+
+[IMPORTANT]
+====
+To use the Agroal integration, the application must include the `hibernate-agroal` module jar (as well as its dependencies) on the classpath.
+====
+
+Hibernate also provides support for applications to use http://agroal.github.io/[Agroal] connection pool.
+
+Set all of your Agroal settings in Hibernate prefixed by `hibernate.agroal.` and this `ConnectionProvider` will pick them up and pass them along to Agroal connection pool.
+Additionally, this `ConnectionProvider` will pick up the following Hibernate-specific properties and map them to the corresponding Agroal ones (any `hibernate.agroal.` prefixed ones have precedence):
+
+`hibernate.connection.driver_class`:: Mapped to Agroal's `driverClassName` setting
+`hibernate.connection.url`:: Mapped to Agroal's `jdbcUrl` setting
+`hibernate.connection.username`:: Mapped to Agroal's `principal` setting
+`hibernate.connection.password`:: Mapped to Agroal's `credential` setting
+`hibernate.connection.isolation`:: Mapped to Agroal's `jdbcTransactionIsolation` setting. See <<ConnectionProvider support for transaction isolation setting>>.
+`hibernate.connection.autocommit`:: Mapped to Agroal's `autoCommit` setting
+
 [[database-connectionprovider-drivermanager]]
 === Using Hibernate's built-in (and unsupported) pooling
 
 [IMPORTANT]
 ====
-The built-in connection pool is not supported supported for use.
+The built-in connection pool is not supported for use in a production system.
 ====
 
 This section is here just for completeness.
@@ -145,6 +187,62 @@ Not that this is only supported for JDBC standard isolation levels, not for isol
 * a short-name version of the java.sql.Connection constant field without the `TRANSACTION_` prefix. For example, `REPEATABLE_READ` for https://docs.oracle.com/javase/8/docs/api/java/sql/Connection.html#TRANSACTION_REPEATABLE_READ[`java.sql.Connection#TRANSACTION_REPEATABLE_READ`].
 Again, this is only supported for JDBC standard isolation levels, not for isolation levels specific to a particular JDBC driver.
 
+[[database-connection-handling]]
+=== Connection handling
+
+The connection handling mode is defined by the
+https://docs.jboss.org/hibernate/orm/{majorMinorVersion}/javadocs/org/hibernate/resource/jdbc/spi/PhysicalConnectionHandlingMode.html[`PhysicalConnectionHandlingMode`] enumeration which provides the following strategies:
+
+`IMMEDIATE_ACQUISITION_AND_HOLD`::
+The `Connection` will be acquired as soon as the `Session` is opened and held until the `Session` is closed.
+`DELAYED_ACQUISITION_AND_HOLD`::
+The `Connection` will be acquired as soon as it is needed and then held until the `Session` is closed.
+`DELAYED_ACQUISITION_AND_RELEASE_AFTER_STATEMENT`::
+The `Connection` will be acquired as soon as it is needed and will be released after each statement is executed.
+`DELAYED_ACQUISITION_AND_RELEASE_AFTER_TRANSACTION`::
+The `Connection` will be acquired as soon as it is needed and will be released after each transaction is completed.
+
+If you don't want to use the default connection handling mode, you can specify a connection handling mode via the `hibernate.connection.handling_mode` configuration property. For more details, check out the
+<<appendices/Configurations.adoc#configurations-database-connection,Database connection properties>> section.
+
+==== Transaction type and connection handling
+
+By default, the connection handling mode is given by the underlying transaction coordinator. There are two types of transactions: `RESOURCE_LOCAL` (which involves a single database `Connection` and the transaction is controlled via the `commit` and `rollback` `Connection` methods) and `JTA` (which may involve multiple resources either database connections, JMS queues, etc).
+
+===== RESOURCE_LOCAL transaction connection handling
+
+For `RESOURCE_LOCAL` transactions, the connection handling mode is `DELAYED_ACQUISITION_AND_RELEASE_AFTER_TRANSACTION` meaning that the database connection is acquired when needed and released after the current running transaction is either committed or rolled back.
+
+However, because Hibernate needs to make sure that the default autocommit mode is disabled on the JDBC `Connection`
+when starting a new transaction, the `Connection` is acquired and the autocommit mode is set to `false`.
+
+[NOTE]
+====
+If you are using a connection pool `DataSource` that already disabled the autocommit mode for every pooled `Connection`, you should set the `hibernate.connection.provider_disables_autocommit` to `true` and the database connection acquisition will be, indeed, delayed until Hibernate needs to execute the first SQL statement.
+====
+
+===== JTA transaction connection handling
+
+For `JTA` transactions, the connection handling mode is `DELAYED_ACQUISITION_AND_RELEASE_AFTER_STATEMENT` meaning that the database connection is acquired when needed and released after each statement execution.
+
+The reason for releasing the database connection after statement execution is because some Java EE application servers
+report a connection leak when a method call goes from one EJB to another. However, even if the JDBC `Connection` is released to the pool, the `Connection` is still allocated to the current executing `Thread`, hence when executing a subsequent statement in the current running transaction, the same `Connection` object reference will be obtained from the pool.
+
+[NOTE]
+====
+If the Java EE application server or JTA transaction manager supports switching from one EJB to another while the transaction gets propagated from the outer EJB to the inner one,
+and no connection leak false positive is being reported, then you should consider switching to `DELAYED_ACQUISITION_AND_RELEASE_AFTER_TRANSACTION` via the `hibernate.connection.handling_mode` configuration property.
+====
+
+==== User-provided connections
+
+If the current `Session` was created using the
+https://docs.jboss.org/hibernate/orm/{majorMinorVersion}/javadocs/org/hibernate/SessionBuilder.html[`SessionBuilder`] and a JDBC `Connection` was provided via the
+https://docs.jboss.org/hibernate/orm/{majorMinorVersion}/javadocs/org/hibernate/SessionBuilder.html#connection-java.sql.Connection-[`SessionBuilder#connection`] method, then the user-provided `Connection` is going to be used, and
+the connection handling mode will be `IMMEDIATE_ACQUISITION_AND_HOLD`.
+
+Therefore for user-provided connection, the connection is acquired right away and held until the current `Session` is closed, without being influenced by the JPA or Hibernate transaction context.
+
 [[database-dialect]]
 === Database Dialect
 
@@ -152,7 +250,7 @@ Although SQL is relatively standardized, each database vendor uses a subset and 
 This is referred to as the database's dialect.
 Hibernate handles variations across these dialects through its `org.hibernate.dialect.Dialect` class and the various subclasses for each database vendor.
 
-In most cases Hibernate will be able to determine the proper Dialect to use by asking some questions of the JDBC Connection during bootstrap.
+In most cases, Hibernate will be able to determine the proper Dialect to use by asking some questions of the JDBC Connection during bootstrap.
 For information on Hibernate's ability to determine the proper Dialect to use (and your ability to influence that resolution), see <<chapters/portability/Portability.adoc#portability-dialectresolver,Dialect resolution>>.
 
 If for some reason it is not able to determine the proper one or you want to use a custom Dialect, you will need to set the `hibernate.dialect` setting.
@@ -163,7 +261,8 @@ If for some reason it is not able to determine the proper one or you want to use
 |Dialect (short name) |Remarks
 |Cache71 |Support for the Caché database, version 2007.1
 |CUBRID |Support for the CUBRID database, version 8.3. May work with later versions.
-|DB2 |Support for the DB2 database
+|DB2 |Support for the DB2 database, version 8.2.
+|DB297 |Support for the DB2 database, version 9.7.
 |DB2390 |Support for DB2 Universal Database for OS/390, also known as DB2/390.
 |DB2400 |Support for DB2 Universal Database for iSeries, also known as DB2/400.
 |DerbyTenFive |Support for the Derby database, version 10.5
@@ -172,6 +271,8 @@ If for some reason it is not able to determine the proper one or you want to use
 |Firebird |Support for the Firebird database
 |FrontBase |Support for the Frontbase database
 |H2 |Support for the H2 database
+|HANAColumnStore |Support for the SAP HANA database column store. This is the recommended dialect for the SAP HANA database.
+|HANARowStore |Support for the SAP HANA database row store
 |HSQL |Support for the HSQL (HyperSQL) database
 |Informix |Support for the Informix database
 |Ingres |Support for the Ingres database, version 9.2
@@ -184,6 +285,8 @@ If for some reason it is not able to determine the proper one or you want to use
 |MySQL5 |Support for the MySQL database, version 5.x
 |MySQL5InnoDB |Support for the MySQL database, version 5.x preferring the InnoDB storage engine when exporting tables.
 |MySQL57InnoDB |Support for the MySQL database, version 5.7 preferring the InnoDB storage engine when exporting tables. May work with newer versions
+|MariaDB |Support for the MariaDB database. May work with newer versions
+|MariaDB53 |Support for the MariaDB database, version 5.3 and newer.
 |Oracle8i |Support for the Oracle database, version 8i
 |Oracle9i |Support for the Oracle database, version 9i
 |Oracle10g |Support for the Oracle database, version 10g

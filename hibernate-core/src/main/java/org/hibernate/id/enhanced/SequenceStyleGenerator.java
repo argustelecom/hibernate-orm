@@ -7,6 +7,7 @@
 package org.hibernate.id.enhanced;
 
 import java.io.Serializable;
+import java.util.Objects;
 import java.util.Properties;
 
 import org.hibernate.HibernateException;
@@ -15,21 +16,28 @@ import org.hibernate.boot.model.naming.Identifier;
 import org.hibernate.boot.model.relational.Database;
 import org.hibernate.boot.model.relational.QualifiedName;
 import org.hibernate.boot.model.relational.QualifiedNameParser;
+import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.dialect.Dialect;
+import org.hibernate.engine.config.spi.ConfigurationService;
+import org.hibernate.engine.config.spi.StandardConverters;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.id.BulkInsertionCapableIdentifierGenerator;
 import org.hibernate.id.Configurable;
+import org.hibernate.id.IdentifierGenerator;
 import org.hibernate.id.PersistentIdentifierGenerator;
+import org.hibernate.id.SequenceMismatchStrategy;
 import org.hibernate.internal.CoreMessageLogger;
+import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.service.ServiceRegistry;
+import org.hibernate.tool.schema.extract.spi.SequenceInformation;
 import org.hibernate.type.Type;
 
 import org.jboss.logging.Logger;
 
 /**
- * Generates identifier values based on an sequence-style database structure.
+ * Generates identifier values based on a sequence-style database structure.
  * Variations range from actually using a sequence to using a table to mimic
  * a sequence.  These variations are encapsulated by the {@link DatabaseStructure}
  * interface internally.
@@ -138,12 +146,14 @@ public class SequenceStyleGenerator
 	 * Used to create dedicated sequence for each entity based on the entity name.  Sequence suffix can be
 	 * controlled with {@link #CONFIG_SEQUENCE_PER_ENTITY_SUFFIX} option.
 	 */
+	@SuppressWarnings("WeakerAccess")
 	public static final String CONFIG_PREFER_SEQUENCE_PER_ENTITY = "prefer_sequence_per_entity";
 
 	/**
 	 * Indicates the suffix to use in naming the identifier sequence/table name, by appending the suffix to
 	 * the name of the entity.  Used in conjunction with {@link #CONFIG_PREFER_SEQUENCE_PER_ENTITY}.
 	 */
+	@SuppressWarnings("WeakerAccess")
 	public static final String CONFIG_SEQUENCE_PER_ENTITY_SUFFIX = "sequence_per_entity_suffix";
 
 	/**
@@ -168,11 +178,13 @@ public class SequenceStyleGenerator
 	/**
 	 * Indicates the name of the column holding the identifier values.  The default value is {@link #DEF_VALUE_COLUMN}
 	 */
+	@SuppressWarnings("WeakerAccess")
 	public static final String VALUE_COLUMN_PARAM = "value_column";
 
 	/**
 	 * The default value for {@link #VALUE_COLUMN_PARAM}
 	 */
+	@SuppressWarnings("WeakerAccess")
 	public static final String DEF_VALUE_COLUMN = "next_val";
 
 
@@ -209,21 +221,53 @@ public class SequenceStyleGenerator
 	}
 
 
-
 	// Configurable implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	@Override
 	public void configure(Type type, Properties params, ServiceRegistry serviceRegistry) throws MappingException {
 		final JdbcEnvironment jdbcEnvironment = serviceRegistry.getService( JdbcEnvironment.class );
+		final ConfigurationService configurationService = serviceRegistry.getService( ConfigurationService.class );
+
 		final Dialect dialect = jdbcEnvironment.getDialect();
 
 		this.identifierType = type;
 		boolean forceTableUse = ConfigurationHelper.getBoolean( FORCE_TBL_PARAM, params, false );
 
-		final QualifiedName sequenceName = determineSequenceName( params, dialect, jdbcEnvironment );
+		final QualifiedName sequenceName = determineSequenceName( params, dialect, jdbcEnvironment, serviceRegistry );
 
 		final int initialValue = determineInitialValue( params );
 		int incrementSize = determineIncrementSize( params );
+
+		if ( isPhysicalSequence( jdbcEnvironment, forceTableUse ) ) {
+			String databaseSequenceName = sequenceName.getObjectName().getText();
+			Long databaseIncrementValue = getSequenceIncrementValue( jdbcEnvironment, databaseSequenceName );
+
+			if ( databaseIncrementValue != null && !databaseIncrementValue.equals( (long) incrementSize ) ) {
+				int dbIncrementValue = databaseIncrementValue.intValue();
+
+				SequenceMismatchStrategy sequenceMismatchStrategy = configurationService.getSetting(
+						AvailableSettings.SEQUENCE_INCREMENT_SIZE_MISMATCH_STRATEGY,
+						SequenceMismatchStrategy::interpret,
+						SequenceMismatchStrategy.EXCEPTION
+				);
+
+				switch ( sequenceMismatchStrategy ) {
+					case EXCEPTION:
+						throw new MappingException(
+								String.format(
+										"The increment size of the [%s] sequence is set to [%d] in the entity mapping " +
+												"while the associated database sequence increment size is [%d].",
+										databaseSequenceName, incrementSize, dbIncrementValue
+								)
+						);
+					case FIX:
+						incrementSize = dbIncrementValue;
+					case LOG:
+						LOG.sequenceIncrementSizeMismatch( databaseSequenceName, incrementSize, dbIncrementValue );
+						break;
+				}
+			}
+		}
 
 		final String optimizationStrategy = determineOptimizationStrategy( params, incrementSize );
 		incrementSize = determineAdjustedIncrementSize( optimizationStrategy, incrementSize );
@@ -264,13 +308,28 @@ public class SequenceStyleGenerator
 	 * @param jdbcEnv The JdbcEnvironment
 	 * @return The sequence name
 	 */
-	@SuppressWarnings("UnusedParameters")
-	protected QualifiedName determineSequenceName(Properties params, Dialect dialect, JdbcEnvironment jdbcEnv) {
+	@SuppressWarnings({"UnusedParameters", "WeakerAccess"})
+	protected QualifiedName determineSequenceName(
+			Properties params,
+			Dialect dialect,
+			JdbcEnvironment jdbcEnv,
+			ServiceRegistry serviceRegistry) {
 		final String sequencePerEntitySuffix = ConfigurationHelper.getString( CONFIG_SEQUENCE_PER_ENTITY_SUFFIX, params, DEF_SEQUENCE_SUFFIX );
+
+		String fallbackSequenceName = DEF_SEQUENCE_NAME;
+		final Boolean preferGeneratorNameAsDefaultName = serviceRegistry.getService( ConfigurationService.class )
+				.getSetting( AvailableSettings.PREFER_GENERATOR_NAME_AS_DEFAULT_SEQUENCE_NAME, StandardConverters.BOOLEAN, true );
+		if ( preferGeneratorNameAsDefaultName ) {
+			final String generatorName = params.getProperty( IdentifierGenerator.GENERATOR_NAME );
+			if ( StringHelper.isNotEmpty( generatorName ) ) {
+				fallbackSequenceName = generatorName;
+			}
+		}
+
 		// JPA_ENTITY_NAME value honors <class ... entity-name="..."> (HBM) and @Entity#name (JPA) overrides.
 		final String defaultSequenceName = ConfigurationHelper.getBoolean( CONFIG_PREFER_SEQUENCE_PER_ENTITY, params, false )
 				? params.getProperty( JPA_ENTITY_NAME ) + sequencePerEntitySuffix
-				: DEF_SEQUENCE_NAME;
+				: fallbackSequenceName;
 
 		final String sequenceName = ConfigurationHelper.getString( SEQUENCE_PARAM, params, defaultSequenceName );
 		if ( sequenceName.contains( "." ) ) {
@@ -303,7 +362,7 @@ public class SequenceStyleGenerator
 	 * @param jdbcEnvironment The JDBC environment
 	 * @return The value column name
 	 */
-	@SuppressWarnings("UnusedParameters")
+	@SuppressWarnings({"UnusedParameters", "WeakerAccess"})
 	protected Identifier determineValueColumnName(Properties params, JdbcEnvironment jdbcEnvironment) {
 		final String name = ConfigurationHelper.getString( VALUE_COLUMN_PARAM, params, DEF_VALUE_COLUMN );
 		return jdbcEnvironment.getIdentifierHelper().toIdentifier( name );
@@ -319,6 +378,7 @@ public class SequenceStyleGenerator
 	 * @param params The params supplied in the generator config (plus some standard useful extras).
 	 * @return The initial value
 	 */
+	@SuppressWarnings({"WeakerAccess"})
 	protected int determineInitialValue(Properties params) {
 		return ConfigurationHelper.getInt( INITIAL_PARAM, params, DEFAULT_INITIAL_VALUE );
 	}
@@ -332,6 +392,7 @@ public class SequenceStyleGenerator
 	 * @param params The params supplied in the generator config (plus some standard useful extras).
 	 * @return The increment size
 	 */
+	@SuppressWarnings("WeakerAccess")
 	protected int determineIncrementSize(Properties params) {
 		return ConfigurationHelper.getInt( INCREMENT_PARAM, params, DEFAULT_INCREMENT_SIZE );
 	}
@@ -345,6 +406,7 @@ public class SequenceStyleGenerator
 	 * @param incrementSize The {@link #determineIncrementSize determined increment size}
 	 * @return The optimizer strategy (name)
 	 */
+	@SuppressWarnings("WeakerAccess")
 	protected String determineOptimizationStrategy(Properties params, int incrementSize) {
 		return ConfigurationHelper.getString(
 				OPT_PARAM,
@@ -361,16 +423,37 @@ public class SequenceStyleGenerator
 	 * @param incrementSize The {@link #determineIncrementSize determined increment size}
 	 * @return The adjusted increment size.
 	 */
+	@SuppressWarnings("WeakerAccess")
 	protected int determineAdjustedIncrementSize(String optimizationStrategy, int incrementSize) {
-		if ( incrementSize > 1 && StandardOptimizerDescriptor.NONE.getExternalName().equals( optimizationStrategy ) ) {
-			LOG.honoringOptimizerSetting(
-					StandardOptimizerDescriptor.NONE.getExternalName(),
-					INCREMENT_PARAM,
-					incrementSize
-			);
-			incrementSize = 1;
+		final int resolvedIncrementSize;
+		if ( Math.abs( incrementSize ) > 1 &&
+				StandardOptimizerDescriptor.NONE.getExternalName().equals( optimizationStrategy ) ) {
+			if ( incrementSize < -1 ) {
+				resolvedIncrementSize = -1;
+				LOG.honoringOptimizerSetting(
+						StandardOptimizerDescriptor.NONE.getExternalName(),
+						INCREMENT_PARAM,
+						incrementSize,
+						"negative",
+						resolvedIncrementSize
+				);
+			}
+			else {
+				// incrementSize > 1
+				resolvedIncrementSize = 1;
+				LOG.honoringOptimizerSetting(
+						StandardOptimizerDescriptor.NONE.getExternalName(),
+						INCREMENT_PARAM,
+						incrementSize,
+						"positive",
+						resolvedIncrementSize
+				);
+			}
 		}
-		return incrementSize;
+		else {
+			resolvedIncrementSize = incrementSize;
+		}
+		return resolvedIncrementSize;
 	}
 
 	/**
@@ -386,6 +469,7 @@ public class SequenceStyleGenerator
 	 *
 	 * @return An abstraction for the actual database structure in use (table vs. sequence).
 	 */
+	@SuppressWarnings("WeakerAccess")
 	protected DatabaseStructure buildDatabaseStructure(
 			Type type,
 			Properties params,
@@ -394,21 +478,45 @@ public class SequenceStyleGenerator
 			QualifiedName sequenceName,
 			int initialValue,
 			int incrementSize) {
-		final boolean useSequence = jdbcEnvironment.getDialect().supportsSequences() && !forceTableUse;
-		if ( useSequence ) {
-			return new SequenceStructure( jdbcEnvironment, sequenceName, initialValue, incrementSize, type.getReturnedClass() );
+		if ( isPhysicalSequence( jdbcEnvironment, forceTableUse ) ) {
+			return buildSequenceStructure( type, params, jdbcEnvironment, sequenceName, initialValue, incrementSize );
 		}
 		else {
-			final Identifier valueColumnName = determineValueColumnName( params, jdbcEnvironment );
-			return new TableStructure( jdbcEnvironment, sequenceName, valueColumnName, initialValue, incrementSize, type.getReturnedClass() );
+			return buildTableStructure( type, params, jdbcEnvironment, sequenceName, initialValue, incrementSize );
 		}
+	}
+
+	protected boolean isPhysicalSequence(JdbcEnvironment jdbcEnvironment, boolean forceTableUse) {
+		return jdbcEnvironment.getDialect().supportsSequences() && !forceTableUse;
+	}
+
+	protected DatabaseStructure buildSequenceStructure(
+			Type type,
+			Properties params,
+			JdbcEnvironment jdbcEnvironment,
+			QualifiedName sequenceName,
+			int initialValue,
+			int incrementSize) {
+		return new SequenceStructure( jdbcEnvironment, sequenceName, initialValue, incrementSize, type.getReturnedClass() );
+	}
+
+	@SuppressWarnings("WeakerAccess")
+	protected DatabaseStructure buildTableStructure(
+			Type type,
+			Properties params,
+			JdbcEnvironment jdbcEnvironment,
+			QualifiedName sequenceName,
+			int initialValue,
+			int incrementSize) {
+		final Identifier valueColumnName = determineValueColumnName( params, jdbcEnvironment );
+		return new TableStructure( jdbcEnvironment, sequenceName, valueColumnName, initialValue, incrementSize, type.getReturnedClass() );
 	}
 
 
 	// IdentifierGenerator implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	@Override
-	public Serializable generate(SessionImplementor session, Object object) throws HibernateException {
+	public Serializable generate(SharedSessionContractImplementor session, Object object) throws HibernateException {
 		return optimizer.generate( databaseStructure.buildCallback( session ) );
 	}
 
@@ -450,5 +558,31 @@ public class SequenceStyleGenerator
 	@Override
 	public void registerExportables(Database database) {
 		databaseStructure.registerExportables( database );
+	}
+
+	/**
+	 * Get the database sequence increment value from the associated {@link SequenceInformation} object.
+	 *
+	 * @param jdbcEnvironment the current JdbcEnvironment
+	 * @param sequenceName sequence name
+	 *
+	 * @return sequence increment value
+	 */
+	private Long getSequenceIncrementValue(JdbcEnvironment jdbcEnvironment, String sequenceName) {
+		return jdbcEnvironment.getExtractedDatabaseMetaData().getSequenceInformationList()
+				.stream()
+				.filter(
+					sequenceInformation -> {
+						Identifier catalog = sequenceInformation.getSequenceName().getCatalogName();
+						Identifier schema = sequenceInformation.getSequenceName().getSchemaName();
+						return sequenceName.equalsIgnoreCase( sequenceInformation.getSequenceName().getSequenceName().getText() ) &&
+								( catalog == null || catalog.equals( jdbcEnvironment.getCurrentCatalog() ) ) &&
+								( schema == null || schema.equals( jdbcEnvironment.getCurrentSchema() ) );
+					}
+				)
+				.map( SequenceInformation::getIncrementValue )
+				.filter( Objects::nonNull )
+				.findFirst()
+				.orElse( null );
 	}
 }
