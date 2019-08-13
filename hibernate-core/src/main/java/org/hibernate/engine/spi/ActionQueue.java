@@ -1168,7 +1168,6 @@ public class ActionQueue {
 				addParentChildEntityNames( action, batchIdentifier );
 				addToBatch( batchIdentifier, action );
 			}
-			insertions.clear();
 
 			// Examine each entry in the batch list, and build the dependency graph.
 			for ( int i = 0; i < latestBatches.size(); i++ ) {
@@ -1217,7 +1216,10 @@ public class ActionQueue {
 					for ( int j = i + 1; j < latestBatches.size(); j++ ) {
 						BatchIdentifier nextBatchIdentifier = latestBatches.get( j );
 
-						if ( batchIdentifier.hasParent( nextBatchIdentifier ) && !nextBatchIdentifier.hasParent( batchIdentifier ) ) {
+						if ( batchIdentifier.hasParent( nextBatchIdentifier )) {
+							if(nextBatchIdentifier.hasParent(batchIdentifier)){
+								break sort;
+							}
 							latestBatches.remove( batchIdentifier );
 							latestBatches.add( j, batchIdentifier );
 
@@ -1235,9 +1237,13 @@ public class ActionQueue {
 			}
 
 			// Now, rebuild the insertions list. There is a batch for each entry in the name list.
-			for ( BatchIdentifier rootIdentifier : latestBatches ) {
-				List<AbstractEntityInsertAction> batch = actionBatches.get( rootIdentifier );
-				insertions.addAll( batch );
+			if(sorted){
+				insertions.clear();
+
+				for ( BatchIdentifier rootIdentifier : latestBatches ) {
+					List<AbstractEntityInsertAction> batch = actionBatches.get( rootIdentifier );
+					insertions.addAll( batch );
+				}
 			}
 		}
 
