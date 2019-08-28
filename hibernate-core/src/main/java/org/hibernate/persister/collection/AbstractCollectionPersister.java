@@ -18,6 +18,7 @@ import java.util.Set;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.FetchMode;
+import org.hibernate.Filter;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
 import org.hibernate.QueryException;
@@ -33,6 +34,7 @@ import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.batch.internal.BasicBatchKey;
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
+import org.hibernate.engine.jdbc.spi.JdbcCoordinator;
 import org.hibernate.engine.jdbc.spi.SqlExceptionHelper;
 import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.ExecuteUpdateResultCheckStyle;
@@ -160,6 +162,7 @@ public abstract class AbstractCollectionPersister
 	protected final String[] elementColumnReaderTemplates;
 	protected final String[] elementFormulaTemplates;
 	protected final String[] elementFormulas;
+	protected final boolean[] elementColumnIsGettable;
 	protected final boolean[] elementColumnIsSettable;
 	protected final boolean[] elementColumnIsInPrimaryKey;
 	protected final String[] indexColumnAliases;
@@ -227,7 +230,6 @@ public abstract class AbstractCollectionPersister
 	private final Serializable[] spaces;
 
 	private Map collectionPropertyColumnAliases = new HashMap();
-	private Map collectionPropertyColumnNames = new HashMap();
 
 	public AbstractCollectionPersister(
 			Collection collectionBinding,
@@ -332,9 +334,15 @@ public abstract class AbstractCollectionPersister
 		elementFormulaTemplates = new String[elementSpan];
 		elementFormulas = new String[elementSpan];
 		elementColumnIsSettable = new boolean[elementSpan];
+		elementColumnIsGettable = new boolean[elementSpan];
 		elementColumnIsInPrimaryKey = new boolean[elementSpan];
 		boolean isPureFormula = true;
 		boolean hasNotNullableColumns = false;
+		boolean oneToMany = collectionBinding.isOneToMany();
+		boolean[] columnInsertability = null;
+		if ( !oneToMany ) {
+			columnInsertability = collectionBinding.getElement().getColumnInsertability();
+		}
 		int j = 0;
 		iter = collectionBinding.getElement().getColumnIterator();
 		while ( iter.hasNext() ) {
@@ -351,7 +359,15 @@ public abstract class AbstractCollectionPersister
 				elementColumnWriters[j] = col.getWriteExpr();
 				elementColumnReaders[j] = col.getReadExpr( dialect );
 				elementColumnReaderTemplates[j] = col.getTemplate( dialect, factory.getSqlFunctionRegistry() );
-				elementColumnIsSettable[j] = true;
+				elementColumnIsGettable[j] = true;
+				if ( elementType.isComponentType() ) {
+					// Implements desired behavior specifically for @ElementCollection mappings.
+					elementColumnIsSettable[j] = columnInsertability[j];
+				}
+				else {
+					// Preserves legacy non-@ElementCollection behavior
+					elementColumnIsSettable[j] = true;
+				}
 				elementColumnIsInPrimaryKey[j] = !col.isNullable();
 				if ( !col.isNullable() ) {
 					hasNotNullableColumns = true;
@@ -701,7 +717,7 @@ public abstract class AbstractCollectionPersister
 		if ( subselectInitializer != null ) {
 			return subselectInitializer;
 		}
-		else if ( session.getLoadQueryInfluencers().getEnabledFilters().isEmpty() ) {
+		else if ( ! session.getLoadQueryInfluencers().hasEnabledFilters() ) {
 			return initializer;
 		}
 		else {
@@ -715,7 +731,7 @@ public abstract class AbstractCollectionPersister
 			return null;
 		}
 
-		final PersistenceContext persistenceContext = session.getPersistenceContext();
+		final PersistenceContext persistenceContext = session.getPersistenceContextInternal();
 
 		SubselectFetch subselect = persistenceContext.getBatchFetchQueue()
 				.getSubselect( session.generateEntityKey( key, getOwnerEntityPersister() ) );
@@ -1087,8 +1103,8 @@ public abstract class AbstractCollectionPersister
 	}
 
 	protected void appendElementColumns(SelectFragment frag, String elemAlias) {
-		for ( int i = 0; i < elementColumnIsSettable.length; i++ ) {
-			if ( elementColumnIsSettable[i] ) {
+		for ( int i = 0; i < elementColumnIsGettable.length; i++ ) {
+			if ( elementColumnIsGettable[i] ) {
 				frag.addColumnTemplate( elemAlias, elementColumnReaderTemplates[i], elementColumnAliases[i] );
 			}
 			else {
@@ -1195,7 +1211,7 @@ public abstract class AbstractCollectionPersister
 
 			try {
 				int offset = 1;
-				PreparedStatement st = null;
+				final PreparedStatement st;
 				Expectation expectation = Expectations.appropriateExpectation( getDeleteAllCheckStyle() );
 				boolean callable = isDeleteAllCallable();
 				boolean useBatch = expectation.canBeBatched();
@@ -1286,6 +1302,7 @@ public abstract class AbstractCollectionPersister
 		try {
 			// create all the new entries
 			Iterator entries = collection.entries( this );
+			final JdbcCoordinator jdbcCoordinator = session.getJdbcCoordinator();
 			if ( entries.hasNext() ) {
 				Expectation expectation = Expectations.appropriateExpectation( getInsertCheckStyle() );
 				collection.preInsert( this );
@@ -1296,7 +1313,7 @@ public abstract class AbstractCollectionPersister
 					final Object entry = entries.next();
 					if ( collection.entryExists( entry, i ) ) {
 						int offset = 1;
-						PreparedStatement st = null;
+						final PreparedStatement st;
 						boolean callable = isInsertCallable();
 						boolean useBatch = expectation.canBeBatched();
 						String sql = getSQLInsertRowString();
@@ -1308,14 +1325,12 @@ public abstract class AbstractCollectionPersister
 										expectation
 								);
 							}
-							st = session
-									.getJdbcCoordinator()
+							st = jdbcCoordinator
 									.getBatch( recreateBatchKey )
 									.getBatchStatement( sql, callable );
 						}
 						else {
-							st = session
-									.getJdbcCoordinator()
+							st = jdbcCoordinator
 									.getStatementPreparer()
 									.prepareStatement( sql, callable );
 						}
@@ -1334,13 +1349,13 @@ public abstract class AbstractCollectionPersister
 							loc = writeElement( st, collection.getElement( entry ), loc, session );
 
 							if ( useBatch ) {
-								session
-										.getJdbcCoordinator()
+								jdbcCoordinator
 										.getBatch( recreateBatchKey )
 										.addToBatch();
 							}
 							else {
-								expectation.verifyOutcome( session.getJdbcCoordinator().getResultSetReturn().executeUpdate( st ), st, -1 );
+								expectation.verifyOutcome( jdbcCoordinator
+																.getResultSetReturn().executeUpdate( st ), st, -1 );
 							}
 
 							collection.afterRowInsert( this, entry, i );
@@ -1348,14 +1363,14 @@ public abstract class AbstractCollectionPersister
 						}
 						catch ( SQLException sqle ) {
 							if ( useBatch ) {
-								session.getJdbcCoordinator().abortBatch();
+								jdbcCoordinator.abortBatch();
 							}
 							throw sqle;
 						}
 						finally {
 							if ( !useBatch ) {
-								session.getJdbcCoordinator().getResourceRegistry().release( st );
-								session.getJdbcCoordinator().afterStatementExecution();
+								jdbcCoordinator.getResourceRegistry().release( st );
+								jdbcCoordinator.afterStatementExecution();
 							}
 						}
 
@@ -1414,7 +1429,7 @@ public abstract class AbstractCollectionPersister
 				int offset = 1;
 				int count = 0;
 				while ( deletes.hasNext() ) {
-					PreparedStatement st = null;
+					final PreparedStatement st;
 					boolean callable = isDeleteCallable();
 					boolean useBatch = expectation.canBeBatched();
 					String sql = getSQLDeleteRowString();
@@ -1877,8 +1892,9 @@ public abstract class AbstractCollectionPersister
 
 	@Override
 	public boolean isAffectedByEnabledFilters(SharedSessionContractImplementor session) {
-		return filterHelper.isAffectedBy( session.getLoadQueryInfluencers().getEnabledFilters() ) ||
-				( isManyToMany() && manyToManyFilterHelper.isAffectedBy( session.getLoadQueryInfluencers().getEnabledFilters() ) );
+		final Map<String, Filter> enabledFilters = session.getLoadQueryInfluencers().getEnabledFilters();
+		return filterHelper.isAffectedBy( enabledFilters ) ||
+				( isManyToMany() && manyToManyFilterHelper.isAffectedBy( enabledFilters ) );
 	}
 
 	public boolean isSubselectLoadable() {
@@ -1899,8 +1915,9 @@ public abstract class AbstractCollectionPersister
 		}
 
 		String[] result = new String[rawAliases.length];
+		final Alias alias = new Alias( suffix );
 		for ( int i = 0; i < rawAliases.length; i++ ) {
-			result[i] = new Alias( suffix ).toUnquotedAliasString( rawAliases[i] );
+			result[i] = alias.toUnquotedAliasString( rawAliases[i] );
 		}
 		return result;
 	}
@@ -1925,7 +1942,6 @@ public abstract class AbstractCollectionPersister
 	private void initCollectionPropertyMap(String aliasName, Type type, String[] columnAliases, String[] columnNames) {
 
 		collectionPropertyColumnAliases.put( aliasName, columnAliases );
-		collectionPropertyColumnNames.put( aliasName, columnNames );
 
 		if ( type.isComponentType() ) {
 			CompositeType ct = (CompositeType) type;
@@ -1933,7 +1949,6 @@ public abstract class AbstractCollectionPersister
 			for ( int i = 0; i < propertyNames.length; i++ ) {
 				String name = propertyNames[i];
 				collectionPropertyColumnAliases.put( aliasName + "." + name, columnAliases[i] );
-				collectionPropertyColumnNames.put( aliasName + "." + name, columnNames[i] );
 			}
 		}
 
@@ -1942,23 +1957,23 @@ public abstract class AbstractCollectionPersister
 	@Override
 	public int getSize(Serializable key, SharedSessionContractImplementor session) {
 		try {
-			PreparedStatement st = session
-					.getJdbcCoordinator()
+			final JdbcCoordinator jdbcCoordinator = session.getJdbcCoordinator();
+			PreparedStatement st = jdbcCoordinator
 					.getStatementPreparer()
 					.prepareStatement( sqlSelectSizeString );
 			try {
 				getKeyType().nullSafeSet( st, key, 1, session );
-				ResultSet rs = session.getJdbcCoordinator().getResultSetReturn().extract( st );
+				ResultSet rs = jdbcCoordinator.getResultSetReturn().extract( st );
 				try {
 					return rs.next() ? rs.getInt( 1 ) - baseIndex : 0;
 				}
 				finally {
-					session.getJdbcCoordinator().getResourceRegistry().release( rs, st );
+					jdbcCoordinator.getResourceRegistry().release( rs, st );
 				}
 			}
 			finally {
-				session.getJdbcCoordinator().getResourceRegistry().release( st );
-				session.getJdbcCoordinator().afterStatementExecution();
+				jdbcCoordinator.getResourceRegistry().release( st );
+				jdbcCoordinator.afterStatementExecution();
 			}
 		}
 		catch ( SQLException sqle ) {
@@ -1983,27 +1998,27 @@ public abstract class AbstractCollectionPersister
 
 	private boolean exists(Serializable key, Object indexOrElement, Type indexOrElementType, String sql, SharedSessionContractImplementor session) {
 		try {
-			PreparedStatement st = session
-					.getJdbcCoordinator()
+			final JdbcCoordinator jdbcCoordinator = session.getJdbcCoordinator();
+			PreparedStatement st = jdbcCoordinator
 					.getStatementPreparer()
 					.prepareStatement( sql );
 			try {
 				getKeyType().nullSafeSet( st, key, 1, session );
 				indexOrElementType.nullSafeSet( st, indexOrElement, keyColumnNames.length + 1, session );
-				ResultSet rs = session.getJdbcCoordinator().getResultSetReturn().extract( st );
+				ResultSet rs = jdbcCoordinator.getResultSetReturn().extract( st );
 				try {
 					return rs.next();
 				}
 				finally {
-					session.getJdbcCoordinator().getResourceRegistry().release( rs, st );
+					jdbcCoordinator.getResourceRegistry().release( rs, st );
 				}
 			}
 			catch ( TransientObjectException e ) {
 				return false;
 			}
 			finally {
-				session.getJdbcCoordinator().getResourceRegistry().release( st );
-				session.getJdbcCoordinator().afterStatementExecution();
+				jdbcCoordinator.getResourceRegistry().release( st );
+				jdbcCoordinator.afterStatementExecution();
 			}
 		}
 		catch ( SQLException sqle ) {
@@ -2019,14 +2034,14 @@ public abstract class AbstractCollectionPersister
 	@Override
 	public Object getElementByIndex(Serializable key, Object index, SharedSessionContractImplementor session, Object owner) {
 		try {
-			PreparedStatement st = session
-					.getJdbcCoordinator()
+			final JdbcCoordinator jdbcCoordinator = session.getJdbcCoordinator();
+			PreparedStatement st = jdbcCoordinator
 					.getStatementPreparer()
 					.prepareStatement( sqlSelectRowByIndexString );
 			try {
 				getKeyType().nullSafeSet( st, key, 1, session );
 				getIndexType().nullSafeSet( st, incrementIndexByBase( index ), keyColumnNames.length + 1, session );
-				ResultSet rs = session.getJdbcCoordinator().getResultSetReturn().extract( st );
+				ResultSet rs = jdbcCoordinator.getResultSetReturn().extract( st );
 				try {
 					if ( rs.next() ) {
 						return getElementType().nullSafeGet( rs, elementColumnAliases, session, owner );
@@ -2036,12 +2051,12 @@ public abstract class AbstractCollectionPersister
 					}
 				}
 				finally {
-					session.getJdbcCoordinator().getResourceRegistry().release( rs, st );
+					jdbcCoordinator.getResourceRegistry().release( rs, st );
 				}
 			}
 			finally {
-				session.getJdbcCoordinator().getResourceRegistry().release( st );
-				session.getJdbcCoordinator().afterStatementExecution();
+				jdbcCoordinator.getResourceRegistry().release( st );
+				jdbcCoordinator.afterStatementExecution();
 			}
 		}
 		catch ( SQLException sqle ) {

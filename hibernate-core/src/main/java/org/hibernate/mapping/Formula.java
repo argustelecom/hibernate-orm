@@ -7,10 +7,12 @@
 package org.hibernate.mapping;
 
 import java.io.Serializable;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.function.SQLFunctionRegistry;
 import org.hibernate.internal.util.StringHelper;
+import org.hibernate.loader.internal.AliasConstantsHelper;
 import org.hibernate.sql.Template;
 
 import static org.hibernate.internal.util.StringHelper.safeInterning;
@@ -20,13 +22,14 @@ import static org.hibernate.internal.util.StringHelper.safeInterning;
  * @author Gavin King
  */
 public class Formula implements Selectable, Serializable {
-	private static int formulaUniqueInteger;
+
+	private static final AtomicInteger formulaUniqueInteger = new AtomicInteger();
 
 	private String formula;
-	private int uniqueInteger;
+	private final int uniqueInteger;
 
 	public Formula() {
-		uniqueInteger = formulaUniqueInteger++;
+		uniqueInteger = formulaUniqueInteger.incrementAndGet();
 	}
 
 	public Formula(String formula) {
@@ -52,7 +55,7 @@ public class Formula implements Selectable, Serializable {
 
 	@Override
 	public String getAlias(Dialect dialect) {
-		return "formula" + Integer.toString(uniqueInteger) + '_';
+		return "formula" + AliasConstantsHelper.get( uniqueInteger );
 	}
 
 	@Override

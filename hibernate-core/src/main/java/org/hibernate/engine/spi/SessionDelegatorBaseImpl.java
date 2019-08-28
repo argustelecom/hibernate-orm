@@ -158,6 +158,11 @@ public class SessionDelegatorBaseImpl implements SessionImplementor {
 	}
 
 	@Override
+	public void checkTransactionNeededForUpdateOperation(String exceptionMessage) {
+		delegate.checkTransactionNeededForUpdateOperation( exceptionMessage );
+	}
+
+	@Override
 	public LockOptions getLockRequest(LockModeType lockModeType, Map<String, Object> properties) {
 		return delegate.getLockRequest( lockModeType, properties );
 	}
@@ -462,6 +467,11 @@ public class SessionDelegatorBaseImpl implements SessionImplementor {
 	}
 
 	@Override
+	public PersistenceContext getPersistenceContextInternal() {
+		return delegate.getPersistenceContextInternal();
+	}
+
+	@Override
 	public SessionEventListenerManager getEventListenerManager() {
 		return delegate.getEventListenerManager();
 	}
@@ -618,7 +628,7 @@ public class SessionDelegatorBaseImpl implements SessionImplementor {
 
 	@Override
 	public StoredProcedureQuery createStoredProcedureQuery(String procedureName) {
-		return delegate.createNamedStoredProcedureQuery( procedureName );
+		return delegate.createStoredProcedureQuery( procedureName );
 	}
 
 	@Override

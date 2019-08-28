@@ -84,7 +84,7 @@ public class DefaultDeleteEventListener implements DeleteEventListener,	Callback
 
 		final EventSource source = event.getSession();
 
-		final PersistenceContext persistenceContext = source.getPersistenceContext();
+		final PersistenceContext persistenceContext = source.getPersistenceContextInternal();
 		Object entity = persistenceContext.unproxyAndReassociate( event.getObject() );
 
 		EntityEntry entityEntry = persistenceContext.getEntry( entity );
@@ -255,7 +255,7 @@ public class DefaultDeleteEventListener implements DeleteEventListener,	Callback
 			);
 		}
 
-		final PersistenceContext persistenceContext = session.getPersistenceContext();
+		final PersistenceContext persistenceContext = session.getPersistenceContextInternal();
 		final Type[] propTypes = persister.getPropertyTypes();
 		final Object version = entityEntry.getVersion();
 
@@ -285,10 +285,9 @@ public class DefaultDeleteEventListener implements DeleteEventListener,	Callback
 
 		cascadeBeforeDelete( session, persister, entity, entityEntry, transientEntities );
 
-		new ForeignKeys.Nullifier( entity, true, false, session )
-				.nullifyTransientReferences( entityEntry.getDeletedState(), propTypes );
+		new ForeignKeys.Nullifier(  entity, true, false, session, persister ).nullifyTransientReferences( entityEntry.getDeletedState() );
 		new Nullability( session ).checkNullability( entityEntry.getDeletedState(), persister, Nullability.NullabilityCheckType.DELETE );
-		persistenceContext.getNullifiableEntityKeys().add( key );
+		persistenceContext.registerNullifiableEntityKey( key );
 
 		if ( isOrphanRemovalBeforeUpdates ) {
 			// TODO: The removeOrphan concept is a temporary "hack" for HHH-6484.  This should be removed once action/task
@@ -360,7 +359,8 @@ public class DefaultDeleteEventListener implements DeleteEventListener,	Callback
 
 		CacheMode cacheMode = session.getCacheMode();
 		session.setCacheMode( CacheMode.GET );
-		session.getPersistenceContext().incrementCascadeLevel();
+		final PersistenceContext persistenceContext = session.getPersistenceContextInternal();
+		persistenceContext.incrementCascadeLevel();
 		try {
 			// cascade-delete to collections BEFORE the collection owner is deleted
 			Cascade.cascade(
@@ -373,7 +373,7 @@ public class DefaultDeleteEventListener implements DeleteEventListener,	Callback
 			);
 		}
 		finally {
-			session.getPersistenceContext().decrementCascadeLevel();
+			persistenceContext.decrementCascadeLevel();
 			session.setCacheMode( cacheMode );
 		}
 	}
@@ -386,7 +386,8 @@ public class DefaultDeleteEventListener implements DeleteEventListener,	Callback
 
 		CacheMode cacheMode = session.getCacheMode();
 		session.setCacheMode( CacheMode.GET );
-		session.getPersistenceContext().incrementCascadeLevel();
+		final PersistenceContext persistenceContext = session.getPersistenceContextInternal();
+		persistenceContext.incrementCascadeLevel();
 		try {
 			// cascade-delete to many-to-one AFTER the parent was deleted
 			Cascade.cascade(
@@ -399,7 +400,7 @@ public class DefaultDeleteEventListener implements DeleteEventListener,	Callback
 			);
 		}
 		finally {
-			session.getPersistenceContext().decrementCascadeLevel();
+			persistenceContext.decrementCascadeLevel();
 			session.setCacheMode( cacheMode );
 		}
 	}

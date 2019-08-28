@@ -9,6 +9,7 @@ package org.hibernate.engine.internal;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.util.function.Supplier;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.CustomEntityDirtinessStrategy;
@@ -16,12 +17,15 @@ import org.hibernate.EntityMode;
 import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
 import org.hibernate.Session;
+import org.hibernate.bytecode.enhance.spi.interceptor.EnhancementAsProxyLazinessInterceptor;
 import org.hibernate.collection.spi.PersistentCollection;
 import org.hibernate.engine.spi.CachedNaturalIdValueSource;
 import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.EntityEntryExtraState;
 import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.PersistenceContext;
+import org.hibernate.engine.spi.PersistentAttributeInterceptable;
+import org.hibernate.engine.spi.PersistentAttributeInterceptor;
 import org.hibernate.engine.spi.SelfDirtinessTracker;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
@@ -306,7 +310,7 @@ public abstract class AbstractEntityEntry implements Serializable, EntityEntry {
 			return !isExistsInDatabase();
 		}
 		else {
-			return session.getPersistenceContext().getNullifiableEntityKeys().contains( getEntityKey() );
+			return session.getPersistenceContextInternal().containsNullifiableEntityKey( this::getEntityKey );
 		}
 	}
 
@@ -343,6 +347,15 @@ public abstract class AbstractEntityEntry implements Serializable, EntityEntry {
 	private boolean isUnequivocallyNonDirty(Object entity) {
 		if ( entity instanceof SelfDirtinessTracker ) {
 			return ! persister.hasCollections() && ! ( (SelfDirtinessTracker) entity ).$$_hibernate_hasDirtyAttributes();
+		}
+
+		if ( entity instanceof PersistentAttributeInterceptable ) {
+			final PersistentAttributeInterceptable interceptable = (PersistentAttributeInterceptable) entity;
+			final PersistentAttributeInterceptor interceptor = interceptable.$$_hibernate_getInterceptor();
+			if ( interceptor instanceof EnhancementAsProxyLazinessInterceptor ) {
+				// we never have to check an uninitialized proxy
+				return true;
+			}
 		}
 
 		final CustomEntityDirtinessStrategy customEntityDirtinessStrategy =

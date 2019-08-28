@@ -247,7 +247,7 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 	@Override
 	public boolean isReadOnly() {
 		return ( readOnly == null ?
-				producer.getPersistenceContext().isDefaultReadOnly() :
+				producer.getPersistenceContextInternal().isDefaultReadOnly() :
 				readOnly
 		);
 	}
@@ -424,10 +424,6 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 		);
 	}
 
-	private  <P> QueryParameterBinding<P> locateBinding(QueryParameter<P> parameter) {
-		return getQueryParameterBindings().getBinding( parameter );
-	}
-
 	private <P> QueryParameterBinding<P> locateBinding(String name) {
 		return getQueryParameterBindings().getBinding( name );
 	}
@@ -476,10 +472,6 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 		else {
 			return getQueryParameterBindings().getQueryParameterListBinding( parameter.getName() );
 		}
-	}
-
-	private QueryParameterListBinding locateListBinding(String name) {
-		return getQueryParameterBindings().getQueryParameterListBinding( name );
 	}
 
 	@Override
@@ -954,21 +946,25 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 	}
 
 	protected void collectHints(Map<String, Object> hints) {
-		if ( getQueryOptions().getTimeout() != null ) {
-			hints.put( HINT_TIMEOUT, getQueryOptions().getTimeout() );
-			hints.put( SPEC_HINT_TIMEOUT, getQueryOptions().getTimeout() * 1000 );
+		final RowSelection queryOptions = getQueryOptions();
+		final Integer queryTimeout = queryOptions.getTimeout();
+		if ( queryTimeout != null ) {
+			hints.put( HINT_TIMEOUT, queryTimeout );
+			hints.put( SPEC_HINT_TIMEOUT, queryTimeout * 1000 );
 		}
 
-		if ( getLockOptions().getTimeOut() != WAIT_FOREVER ) {
-			hints.put( JPA_LOCK_TIMEOUT, getLockOptions().getTimeOut() );
+		final LockOptions lockOptions = getLockOptions();
+		final int lockOptionsTimeOut = lockOptions.getTimeOut();
+		if ( lockOptionsTimeOut != WAIT_FOREVER ) {
+			hints.put( JPA_LOCK_TIMEOUT, lockOptionsTimeOut );
 		}
 
-		if ( getLockOptions().getScope() ) {
-			hints.put( JPA_LOCK_SCOPE, getLockOptions().getScope() );
+		if ( lockOptions.getScope() ) {
+			hints.put( JPA_LOCK_SCOPE, lockOptions.getScope() );
 		}
 
-		if ( getLockOptions().hasAliasSpecificLockModes() && canApplyAliasSpecificLockModeHints() ) {
-			for ( Map.Entry<String, LockMode> entry : getLockOptions().getAliasSpecificLocks() ) {
+		if ( lockOptions.hasAliasSpecificLockModes() && canApplyAliasSpecificLockModeHints() ) {
+			for ( Map.Entry<String, LockMode> entry : lockOptions.getAliasSpecificLocks() ) {
 				hints.put(
 						ALIAS_SPECIFIC_LOCK_MODE + '.' + entry.getKey(),
 						entry.getValue().name()
@@ -977,7 +973,7 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 		}
 
 		putIfNotNull( hints, HINT_COMMENT, getComment() );
-		putIfNotNull( hints, HINT_FETCH_SIZE, getQueryOptions().getFetchSize() );
+		putIfNotNull( hints, HINT_FETCH_SIZE, queryOptions.getFetchSize() );
 		putIfNotNull( hints, HINT_FLUSH_MODE, getHibernateFlushMode() );
 
 		if ( cacheStoreMode != null || cacheRetrieveMode != null ) {
@@ -1367,11 +1363,12 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 			entityGraphHintedQueryPlan = null;
 		}
 		else {
+			final SharedSessionContractImplementor producer = getProducer();
 			entityGraphHintedQueryPlan = new HQLQueryPlan(
 					hql,
 					false,
-					getProducer().getLoadQueryInfluencers().getEnabledFilters(),
-					getProducer().getFactory(),
+					producer.getLoadQueryInfluencers().getEnabledFilters(),
+					producer.getFactory(),
 					entityGraphQueryHint
 			);
 		}
@@ -1535,7 +1532,7 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 			throw new IllegalArgumentException( e );
 		}
 		catch (HibernateException he) {
-			throw getExceptionConverter().convert( he );
+			throw getExceptionConverter().convert( he, getLockOptions() );
 		}
 		finally {
 			afterQuery();
@@ -1581,12 +1578,7 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 			return uniqueElement( list );
 		}
 		catch ( HibernateException e ) {
-			if ( getProducer().getFactory().getSessionFactoryOptions().isJpaBootstrap() ) {
-				throw getExceptionConverter().convert( e );
-			}
-			else {
-				throw e;
-			}
+			throw getExceptionConverter().convert( e, getLockOptions() );
 		}
 	}
 
@@ -1606,13 +1598,8 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 
 	@Override
 	public int executeUpdate() throws HibernateException {
-		if ( ! getProducer().isTransactionInProgress() ) {
-			throw getProducer().getExceptionConverter().convert(
-					new TransactionRequiredException(
-							"Executing an update/delete query"
-					)
-			);
-		}
+		getProducer().checkTransactionNeededForUpdateOperation( "Executing an update/delete query" );
+
 		beforeQuery();
 		try {
 			return doExecuteUpdate();
@@ -1624,12 +1611,7 @@ public abstract class AbstractProducedQuery<R> implements QueryImplementor<R> {
 			throw new IllegalArgumentException( e );
 		}
 		catch ( HibernateException e) {
-			if ( getProducer().getFactory().getSessionFactoryOptions().isJpaBootstrap() ) {
-				throw getExceptionConverter().convert( e );
-			}
-			else {
-				throw e;
-			}
+			throw getExceptionConverter().convert( e );
 		}
 		finally {
 			afterQuery();

@@ -10,7 +10,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -18,14 +17,26 @@ import java.util.stream.Stream;
 
 import org.hibernate.HibernateException;
 
+/**
+ * This dispatcher analyzes the stack frames to detect if a particular call should be authorized.
+ * <p>
+ * Authorized classes are registered when creating the ByteBuddy proxies.
+ * <p>
+ * It should only be used when the Security Manager is enabled.
+ */
 public class HibernateMethodLookupDispatcher {
 
-	private static final SecurityActions SECURITY_ACTIONS = new SecurityActions();
-
-	private static final Function<Object, Class<?>> STACK_FRAME_GET_DECLARING_CLASS_FUNCTION;
-	private static Object stackWalker;
-	private static Method stackWalkerWalkMethod;
-	private static Method stackFrameGetDeclaringClass;
+	/**
+	 * The minimum number of stack frames to drop before we can hope to find the caller frame.
+	 */
+	private static final int MIN_STACK_FRAMES = 3;
+	/**
+	 * The maximum number of stack frames to explore to find the caller frame.
+	 * <p>
+	 * Beyond that, we give up and throw an exception.
+	 */
+	private static final int MAX_STACK_FRAMES = 16;
+	private static final PrivilegedAction<Class<?>[]> GET_CALLER_STACK_ACTION;
 
 	// Currently, the bytecode provider is created statically and shared between all the session factories. Thus we
 	// can't clear this set when we close a session factory as we might remove elements coming from another one.
@@ -83,12 +94,13 @@ public class HibernateMethodLookupDispatcher {
 	}
 
 	static {
-		PrivilegedAction<Void> initializeGetCallerClassRequirementsAction = new PrivilegedAction<Void>() {
-
+		// The action below will return the action used at runtime to retrieve the caller stack
+		PrivilegedAction<PrivilegedAction<Class<?>[]>> initializeGetCallerStackAction = new PrivilegedAction<PrivilegedAction<Class<?>[]>>() {
 			@Override
-			public Void run() {
+			public PrivilegedAction<Class<?>[]> run() {
 				Class<?> stackWalkerClass = null;
 				try {
+					// JDK 9 introduced the StackWalker
 					stackWalkerClass = Class.forName( "java.lang.StackWalker" );
 				}
 				catch (ClassNotFoundException e) {
@@ -96,33 +108,109 @@ public class HibernateMethodLookupDispatcher {
 				}
 
 				if ( stackWalkerClass != null ) {
+					// We can use a stack walker
 					try {
 						Class<?> optionClass = Class.forName( "java.lang.StackWalker$Option" );
-						stackWalker = stackWalkerClass.getMethod( "getInstance", optionClass )
+						Object stackWalker = stackWalkerClass.getMethod( "getInstance", optionClass )
 								// The first one is RETAIN_CLASS_REFERENCE
 								.invoke( null, optionClass.getEnumConstants()[0] );
 
-						stackWalkerWalkMethod = stackWalkerClass.getMethod( "walk", Function.class );
-						stackFrameGetDeclaringClass = Class.forName( "java.lang.StackWalker$StackFrame" )
+						Method stackWalkerWalkMethod = stackWalkerClass.getMethod( "walk", Function.class );
+						Method  stackFrameGetDeclaringClass = Class.forName( "java.lang.StackWalker$StackFrame" )
 								.getMethod( "getDeclaringClass" );
+						return new StackWalkerGetCallerStackAction(
+								stackWalker, stackWalkerWalkMethod,stackFrameGetDeclaringClass
+						);
 					}
 					catch (Throwable e) {
 						throw new HibernateException( "Unable to initialize the stack walker", e );
 					}
 				}
-
-				return null;
+				else {
+					// We cannot use a stack walker, default to fetching the security manager class context
+					return new SecurityManagerClassContextGetCallerStackAction();
+				}
 			}
 		};
 
-		if ( System.getSecurityManager() != null ) {
-			AccessController.doPrivileged( initializeGetCallerClassRequirementsAction );
-		}
-		else {
-			initializeGetCallerClassRequirementsAction.run();
+		GET_CALLER_STACK_ACTION = System.getSecurityManager() != null
+				? AccessController.doPrivileged( initializeGetCallerStackAction )
+				: initializeGetCallerStackAction.run();
+	}
+
+	private static Class<?> getCallerClass() {
+		Class<?>[] stackTrace = System.getSecurityManager() != null
+				? AccessController.doPrivileged( GET_CALLER_STACK_ACTION )
+				: GET_CALLER_STACK_ACTION.run();
+
+		// this shouldn't happen but let's be safe
+		if ( stackTrace.length <= MIN_STACK_FRAMES ) {
+			throw new SecurityException( "Unable to determine the caller class" );
 		}
 
-		STACK_FRAME_GET_DECLARING_CLASS_FUNCTION = new Function<Object, Class<?>>() {
+		boolean hibernateMethodLookupDispatcherDetected = false;
+		// start at the 4th frame and limit that to the MAX_STACK_FRAMES first frames
+		int maxFrames = Math.min( MAX_STACK_FRAMES, stackTrace.length );
+		for ( int i = MIN_STACK_FRAMES; i < maxFrames; i++ ) {
+			if ( stackTrace[i].getName().equals( HibernateMethodLookupDispatcher.class.getName() ) ) {
+				hibernateMethodLookupDispatcherDetected = true;
+				continue;
+			}
+			if ( hibernateMethodLookupDispatcherDetected ) {
+				return stackTrace[i];
+			}
+		}
+
+		throw new SecurityException( "Unable to determine the caller class" );
+	}
+
+	/**
+	 * A privileged action that retrieves the caller stack from the security manager class context.
+	 */
+	private static class SecurityManagerClassContextGetCallerStackAction extends SecurityManager
+			implements PrivilegedAction<Class<?>[]> {
+		@Override
+		public Class<?>[] run() {
+			return getClassContext();
+		}
+	}
+
+	/**
+	 * A privileged action that retrieves the caller stack using a stack walker.
+	 */
+	private static class StackWalkerGetCallerStackAction implements PrivilegedAction<Class<?>[]> {
+		private final Object stackWalker;
+		private final Method stackWalkerWalkMethod;
+		private final Method stackFrameGetDeclaringClass;
+
+		StackWalkerGetCallerStackAction(Object stackWalker, Method stackWalkerWalkMethod,
+				Method stackFrameGetDeclaringClass) {
+			this.stackWalker = stackWalker;
+			this.stackWalkerWalkMethod = stackWalkerWalkMethod;
+			this.stackFrameGetDeclaringClass = stackFrameGetDeclaringClass;
+		}
+
+		@Override
+		public Class<?>[] run() {
+			try {
+				return (Class<?>[]) stackWalkerWalkMethod.invoke( stackWalker, stackFrameExtractFunction );
+			}
+			catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+				throw new SecurityException( "Unable to determine the caller class", e );
+			}
+		}
+
+		@SuppressWarnings({ "unchecked", "rawtypes" })
+		private final Function<Stream, Object> stackFrameExtractFunction = new Function<Stream, Object>() {
+			@Override
+			public Object apply(Stream stream) {
+				return stream.map( stackFrameGetDeclaringClassFunction )
+						.limit( MAX_STACK_FRAMES )
+						.toArray( Class<?>[]::new );
+			}
+		};
+
+		private final Function<Object, Class<?>> stackFrameGetDeclaringClassFunction = new Function<Object, Class<?>>() {
 			@Override
 			public Class<?> apply(Object t) {
 				try {
@@ -133,49 +221,5 @@ public class HibernateMethodLookupDispatcher {
 				}
 			}
 		};
-	}
-
-	private static Class<?> getCallerClass() {
-		PrivilegedAction<Class<?>> getCallerClassAction = new PrivilegedAction<Class<?>>() {
-
-			@Override
-			@SuppressWarnings({ "unchecked", "rawtypes" })
-			public Class<?> run() {
-				try {
-					if ( stackWalker != null ) {
-						Optional<Class<?>> clazzOptional = (Optional<Class<?>>) stackWalkerWalkMethod.invoke( stackWalker, new Function<Stream, Object>() {
-							@Override
-							public Object apply(Stream stream) {
-								return stream.map( STACK_FRAME_GET_DECLARING_CLASS_FUNCTION )
-										.skip( System.getSecurityManager() != null ? 6 : 5 )
-										.findFirst();
-							}
-						});
-
-						if ( !clazzOptional.isPresent() ) {
-							throw new HibernateException( "Unable to determine the caller class" );
-						}
-
-						return clazzOptional.get();
-					}
-					else {
-						return SECURITY_ACTIONS.getCallerClass();
-					}
-				}
-				catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-					throw new SecurityException( "Unable to determine the caller class", e );
-				}
-			}
-		};
-
-		return System.getSecurityManager() != null ? AccessController.doPrivileged( getCallerClassAction ) :
-				getCallerClassAction.run();
-	}
-
-	private static class SecurityActions extends SecurityManager {
-
-		private Class<?> getCallerClass() {
-			return getClassContext()[7];
-		}
 	}
 }

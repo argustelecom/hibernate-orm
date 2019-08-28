@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import javax.naming.Reference;
 import javax.naming.StringRefAddr;
 import javax.persistence.EntityGraph;
@@ -66,6 +68,7 @@ import org.hibernate.engine.config.spi.ConfigurationService;
 import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
 import org.hibernate.engine.jdbc.connections.spi.JdbcConnectionAccess;
 import org.hibernate.engine.jdbc.connections.spi.MultiTenantConnectionProvider;
+import org.hibernate.engine.jdbc.env.internal.JdbcEnvironmentInitiator;
 import org.hibernate.engine.jdbc.spi.JdbcServices;
 import org.hibernate.engine.jndi.spi.JndiService;
 import org.hibernate.engine.profile.Association;
@@ -79,6 +82,7 @@ import org.hibernate.engine.spi.NamedQueryDefinitionBuilder;
 import org.hibernate.engine.spi.NamedSQLQueryDefinition;
 import org.hibernate.engine.spi.NamedSQLQueryDefinitionBuilder;
 import org.hibernate.engine.spi.SessionBuilderImplementor;
+import org.hibernate.engine.spi.SessionEventListenerManager;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.engine.spi.SessionOwner;
 import org.hibernate.engine.transaction.jta.platform.spi.JtaPlatform;
@@ -106,7 +110,9 @@ import org.hibernate.persister.entity.Loadable;
 import org.hibernate.procedure.ProcedureCall;
 import org.hibernate.proxy.EntityNotFoundDelegate;
 import org.hibernate.proxy.HibernateProxyHelper;
+import org.hibernate.query.NativeQuery;
 import org.hibernate.query.criteria.internal.CriteriaBuilderImpl;
+import org.hibernate.query.spi.NamedQueryRepository;
 import org.hibernate.resource.jdbc.spi.PhysicalConnectionHandlingMode;
 import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.hibernate.resource.transaction.backend.jta.internal.synchronization.AfterCompletionAction;
@@ -153,6 +159,7 @@ import static org.hibernate.metamodel.internal.JpaMetaModelPopulationSetting.det
  */
 public final class SessionFactoryImpl implements SessionFactoryImplementor {
 	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( SessionFactoryImpl.class );
+	private static final Pattern LISTENER_SEPARATION_PATTERN = Pattern.compile( " ," );
 
 	private final String name;
 	private final String uuid;
@@ -176,7 +183,7 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 	private final transient CriteriaBuilderImpl criteriaBuilder;
 	private final PersistenceUnitUtil jpaPersistenceUnitUtil;
 	private final transient CacheImplementor cacheAccess;
-	private final transient org.hibernate.query.spi.NamedQueryRepository namedQueryRepository;
+	private final transient NamedQueryRepository namedQueryRepository;
 	private final transient QueryPlanCache queryPlanCache;
 
 	private final transient CurrentSessionContext currentSessionContext;
@@ -189,6 +196,10 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 	private final transient Map<String, FetchProfile> fetchProfiles;
 
 	private final transient TypeHelper typeHelper;
+
+	private final transient FastSessionServices fastSessionServices;
+	private final transient SessionBuilder defaultSessionOpenOptions;
+	private final transient SessionBuilder temporarySessionOpenOptions;
 
 	public SessionFactoryImpl(
 			final MetadataImplementor metadata,
@@ -368,6 +379,13 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 				fetchProfiles.put( fetchProfile.getName(), fetchProfile );
 			}
 
+			this.defaultSessionOpenOptions = withOptions();
+			this.temporarySessionOpenOptions = withOptions()
+					.autoClose( false )
+					.flushMode( FlushMode.MANUAL )
+					.connectionHandlingMode( PhysicalConnectionHandlingMode.DELAYED_ACQUISITION_AND_RELEASE_AFTER_STATEMENT );
+			this.fastSessionServices = new FastSessionServices( this );
+
 			this.observer.sessionFactoryCreated( this );
 
 			SessionFactoryRegistry.INSTANCE.addSessionFactory(
@@ -408,7 +426,7 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 			);
 			final EventType eventType = EventType.resolveEventTypeByName( eventTypeName );
 			final EventListenerGroup eventListenerGroup = eventListenerRegistry.getEventListenerGroup( eventType );
-			for ( String listenerImpl : ( (String) entry.getValue() ).split( " ," ) ) {
+			for ( String listenerImpl : LISTENER_SEPARATION_PATTERN.split( ( (String) entry.getValue() ) ) ) {
 				eventListenerGroup.appendListener( instantiate( listenerImpl, classLoaderService ) );
 			}
 		}
@@ -452,41 +470,22 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 	}
 
 	private JdbcConnectionAccess buildLocalConnectionAccess() {
-		return new JdbcConnectionAccess() {
-			@Override
-			public Connection obtainConnection() throws SQLException {
-				return !settings.getMultiTenancyStrategy().requiresMultiTenantConnectionProvider()
-						? serviceRegistry.getService( ConnectionProvider.class ).getConnection()
-						: serviceRegistry.getService( MultiTenantConnectionProvider.class ).getAnyConnection();
-			}
-
-			@Override
-			public void releaseConnection(Connection connection) throws SQLException {
-				if ( !settings.getMultiTenancyStrategy().requiresMultiTenantConnectionProvider() ) {
-					serviceRegistry.getService( ConnectionProvider.class ).closeConnection( connection );
-				}
-				else {
-					serviceRegistry.getService( MultiTenantConnectionProvider.class ).releaseAnyConnection( connection );
-				}
-			}
-
-			@Override
-			public boolean supportsAggressiveRelease() {
-				return false;
-			}
-		};
+		if ( settings.getMultiTenancyStrategy().requiresMultiTenantConnectionProvider() ) {
+			final MultiTenantConnectionProvider mTenantConnectionProvider = serviceRegistry.getService( MultiTenantConnectionProvider.class );
+			return new JdbcEnvironmentInitiator.MultiTenantConnectionProviderJdbcConnectionAccess( mTenantConnectionProvider );
+		}
+		else {
+			final ConnectionProvider connectionProvider = serviceRegistry.getService( ConnectionProvider.class );
+			return new JdbcEnvironmentInitiator.ConnectionProviderJdbcConnectionAccess( connectionProvider );
+		}
 	}
 
 	public Session openSession() throws HibernateException {
-		return withOptions().openSession();
+		return this.defaultSessionOpenOptions.openSession();
 	}
 
 	public Session openTemporarySession() throws HibernateException {
-		return withOptions()
-				.autoClose( false )
-				.flushMode( FlushMode.MANUAL )
-				.connectionHandlingMode( PhysicalConnectionHandlingMode.DELAYED_ACQUISITION_AND_RELEASE_AFTER_STATEMENT )
-				.openSession();
+		return this.temporarySessionOpenOptions.openSession();
 	}
 
 	public Session getCurrentSession() throws HibernateException {
@@ -607,10 +606,10 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 	@Override
 	public Session createEntityManager() {
 		validateNotClosed();
-		return buildEntityManager( SynchronizationType.SYNCHRONIZED, Collections.emptyMap() );
+		return buildEntityManager( SynchronizationType.SYNCHRONIZED, null );
 	}
 
-	private Session buildEntityManager(SynchronizationType synchronizationType, Map map) {
+	private <K,V> Session buildEntityManager(final SynchronizationType synchronizationType, final Map<K,V> map) {
 		assert !isClosed;
 
 		SessionBuilderImplementor builder = withOptions();
@@ -623,11 +622,13 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 
 		final Session session = builder.openSession();
 		if ( map != null ) {
-			map.keySet().forEach( key -> {
+			for ( Map.Entry<K, V> o : map.entrySet() ) {
+				final K key = o.getKey();
 				if ( key instanceof String ) {
-					session.setProperty( (String) key, map.get( key ) );
+					final String sKey = (String) key;
+					session.setProperty( sKey, o.getValue() );
 				}
-			} );
+			}
 		}
 		return session;
 	}
@@ -642,7 +643,7 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 	public Session createEntityManager(SynchronizationType synchronizationType) {
 		validateNotClosed();
 		errorIfResourceLocalDueToExplicitSynchronizationType();
-		return buildEntityManager( synchronizationType, Collections.emptyMap() );
+		return buildEntityManager( synchronizationType, null );
 	}
 
 	private void errorIfResourceLocalDueToExplicitSynchronizationType() {
@@ -708,7 +709,7 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 	}
 
 	@Override
-	public org.hibernate.query.spi.NamedQueryRepository getNamedQueryRepository() {
+	public NamedQueryRepository getNamedQueryRepository() {
 		return namedQueryRepository;
 	}
 
@@ -859,10 +860,10 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 			org.hibernate.query.Query hibernateQuery = query.unwrap( org.hibernate.query.Query.class );
 			if ( hibernateQuery != null ) {
 				// create and register the proper NamedQueryDefinition...
-				if ( org.hibernate.query.NativeQuery.class.isInstance( hibernateQuery ) ) {
+				if ( NativeQuery.class.isInstance( hibernateQuery ) ) {
 					getNamedQueryRepository().registerNamedSQLQueryDefinition(
 							name,
-							extractSqlQueryDefinition( (org.hibernate.query.NativeQuery) hibernateQuery, name )
+							extractSqlQueryDefinition( (NativeQuery) hibernateQuery, name )
 					);
 				}
 				else {
@@ -894,7 +895,7 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 		);
 	}
 
-	private NamedSQLQueryDefinition extractSqlQueryDefinition(org.hibernate.query.NativeQuery nativeSqlQuery, String name) {
+	private NamedSQLQueryDefinition extractSqlQueryDefinition(NativeQuery nativeSqlQuery, String name) {
 		final NamedSQLQueryDefinitionBuilder builder = new NamedSQLQueryDefinitionBuilder( name );
 		fillInNamedQueryBuilder( builder, nativeSqlQuery );
 		builder.setCallable( nativeSqlQuery.isCallable() )
@@ -1110,30 +1111,33 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 		}
 
 		// prefer the SF-scoped interceptor, prefer that to any Session-scoped interceptor prototype
-		if ( options.getInterceptor() != null && options.getInterceptor() != EmptyInterceptor.INSTANCE ) {
-			return options.getInterceptor();
+		final Interceptor optionsInterceptor = options.getInterceptor();
+		if ( optionsInterceptor != null && optionsInterceptor != EmptyInterceptor.INSTANCE ) {
+			return optionsInterceptor;
 		}
 
 		// then check the Session-scoped interceptor prototype
-		if ( options.getStatelessInterceptorImplementor() != null && options.getStatelessInterceptorImplementorSupplier() != null ) {
+		final Class<? extends Interceptor> statelessInterceptorImplementor = options.getStatelessInterceptorImplementor();
+		final Supplier<? extends Interceptor> statelessInterceptorImplementorSupplier = options.getStatelessInterceptorImplementorSupplier();
+		if ( statelessInterceptorImplementor != null && statelessInterceptorImplementorSupplier != null ) {
 			throw new HibernateException(
 					"A session scoped interceptor class or supplier are allowed, but not both!" );
 		}
-		else if ( options.getStatelessInterceptorImplementor() != null ) {
+		else if ( statelessInterceptorImplementor != null ) {
 			try {
 				/**
 				 * We could remove the getStatelessInterceptorImplementor method and use just the getStatelessInterceptorImplementorSupplier
 				 * since it can cover both cases when the user has given a Supplier<? extends Interceptor> or just the
 				 * Class<? extends Interceptor>, in which case, we simply instantiate the Interceptor when calling the Supplier.
 				 */
-				return options.getStatelessInterceptorImplementor().newInstance();
+				return statelessInterceptorImplementor.newInstance();
 			}
 			catch (InstantiationException | IllegalAccessException e) {
 				throw new HibernateException( "Could not supply session-scoped SessionFactory Interceptor", e );
 			}
 		}
-		else if ( options.getStatelessInterceptorImplementorSupplier() != null ) {
-			return options.getStatelessInterceptorImplementorSupplier().get();
+		else if ( statelessInterceptorImplementorSupplier != null ) {
+			return statelessInterceptorImplementorSupplier.get();
 		}
 
 		return null;
@@ -1143,7 +1147,6 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 		private static final Logger log = CoreLogging.logger( SessionBuilderImpl.class );
 
 		private final SessionFactoryImpl sessionFactory;
-		private SessionOwner sessionOwner;
 		private Interceptor interceptor;
 		private StatementInspector statementInspector;
 		private Connection connection;
@@ -1156,31 +1159,32 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 		private TimeZone jdbcTimeZone;
 		private boolean queryParametersValidationEnabled;
 
+		// Lazy: defaults can be built by invoking the builder in fastSessionServices.defaultSessionEventListeners
+		// (Need a fresh build for each Session as the listener instances can't be reused across sessions)
+		// Only initialize of the builder is overriding the default.
 		private List<SessionEventListener> listeners;
 
 		//todo : expose setting
 		private SessionOwnerBehavior sessionOwnerBehavior = SessionOwnerBehavior.LEGACY_NATIVE;
-		private PersistenceUnitTransactionType persistenceUnitTransactionType;
 
 		SessionBuilderImpl(SessionFactoryImpl sessionFactory) {
 			this.sessionFactory = sessionFactory;
-			this.sessionOwner = null;
 
 			// set up default builder values...
-			this.statementInspector = sessionFactory.getSessionFactoryOptions().getStatementInspector();
-			this.connectionHandlingMode = sessionFactory.getSessionFactoryOptions().getPhysicalConnectionHandlingMode();
-			this.autoClose = sessionFactory.getSessionFactoryOptions().isAutoCloseSessionEnabled();
-			this.flushMode = sessionFactory.getSessionFactoryOptions().isFlushBeforeCompletionEnabled()
+			final SessionFactoryOptions sessionFactoryOptions = sessionFactory.getSessionFactoryOptions();
+			this.statementInspector = sessionFactoryOptions.getStatementInspector();
+			this.connectionHandlingMode = sessionFactoryOptions.getPhysicalConnectionHandlingMode();
+			this.autoClose = sessionFactoryOptions.isAutoCloseSessionEnabled();
+			this.flushMode = sessionFactoryOptions.isFlushBeforeCompletionEnabled()
 					? FlushMode.AUTO
 					: FlushMode.MANUAL;
 
-			if ( sessionFactory.getCurrentTenantIdentifierResolver() != null ) {
-				tenantIdentifier = sessionFactory.getCurrentTenantIdentifierResolver().resolveCurrentTenantIdentifier();
+			final CurrentTenantIdentifierResolver currentTenantIdentifierResolver = sessionFactory.getCurrentTenantIdentifierResolver();
+			if ( currentTenantIdentifierResolver != null ) {
+				tenantIdentifier = currentTenantIdentifierResolver.resolveCurrentTenantIdentifier();
 			}
-			this.jdbcTimeZone = sessionFactory.getSessionFactoryOptions().getJdbcTimeZone();
-
-			listeners = sessionFactory.getSessionFactoryOptions().getBaselineSessionEventsListenerBuilder().buildBaselineList();
-			queryParametersValidationEnabled = sessionFactory.getSessionFactoryOptions().isQueryParametersValidationEnabled();
+			this.jdbcTimeZone = sessionFactoryOptions.getJdbcTimeZone();
+			this.queryParametersValidationEnabled = sessionFactoryOptions.isQueryParametersValidationEnabled();
 		}
 
 
@@ -1189,26 +1193,18 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 
 		@Override
 		public SessionOwner getSessionOwner() {
-			return sessionOwner;
+			return null;
 		}
 
 		@Override
 		public ExceptionMapper getExceptionMapper() {
-			if ( sessionOwner != null ) {
-				return sessionOwner.getExceptionMapper();
-			}
-			else {
-				return sessionOwnerBehavior == SessionOwnerBehavior.LEGACY_JPA
-						? ExceptionMapperLegacyJpaImpl.INSTANCE
-						: null;
-			}
+			return sessionOwnerBehavior == SessionOwnerBehavior.LEGACY_JPA
+					? ExceptionMapperLegacyJpaImpl.INSTANCE
+					: null;
 		}
 
 		@Override
 		public AfterCompletionAction getAfterCompletionAction() {
-			if ( sessionOwner != null ) {
-				return sessionOwner.getAfterCompletionAction();
-			}
 			return sessionOwnerBehavior == SessionOwnerBehavior.LEGACY_JPA
 					? AfterCompletionActionLegacyJpaImpl.INSTANCE
 					: null;
@@ -1216,9 +1212,6 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 
 		@Override
 		public ManagedFlushChecker getManagedFlushChecker() {
-			if ( sessionOwner != null ) {
-				return sessionOwner.getManagedFlushChecker();
-			}
 			return sessionOwnerBehavior == SessionOwnerBehavior.LEGACY_JPA
 					? ManagedFlushCheckerLegacyJpaImpl.INSTANCE
 					: null;
@@ -1279,26 +1272,24 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 			return jdbcTimeZone;
 		}
 
+		@Override
+		public List<SessionEventListener> getCustomSessionEventListener() {
+			return listeners;
+		}
+
 		// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 		// SessionBuilder
 
 		@Override
 		public Session openSession() {
-			log.tracef( "Opening Hibernate Session.  tenant=%s, owner=%s", tenantIdentifier, sessionOwner );
-			final SessionImpl session = new SessionImpl( sessionFactory, this );
-
-			for ( SessionEventListener listener : listeners ) {
-				session.getEventListenerManager().addListener( listener );
-			}
-
-			return session;
+			log.tracef( "Opening Hibernate Session.  tenant=%s", tenantIdentifier );
+			return new SessionImpl( sessionFactory, this );
 		}
 
 		@Override
 		@SuppressWarnings("unchecked")
 		public T owner(SessionOwner sessionOwner) {
-			this.sessionOwner = sessionOwner;
-			return (T) this;
+			throw new UnsupportedOperationException( "SessionOwner was long deprecated and this method should no longer be invoked" );
 		}
 
 		@Override
@@ -1388,6 +1379,11 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 		@Override
 		@SuppressWarnings("unchecked")
 		public T eventListeners(SessionEventListener... listeners) {
+			if ( this.listeners == null ) {
+				this.listeners = sessionFactory.getSessionFactoryOptions()
+						.getBaselineSessionEventsListenerBuilder()
+						.buildBaselineList();
+			}
 			Collections.addAll( this.listeners, listeners );
 			return (T) this;
 		}
@@ -1395,7 +1391,13 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 		@Override
 		@SuppressWarnings("unchecked")
 		public T clearEventListeners() {
-			listeners.clear();
+			if ( listeners == null ) {
+				//Needs to initialize explicitly to an empty list as otherwise "null" immplies the default listeners will be applied
+				this.listeners = new ArrayList<SessionEventListener>( 3 );
+			}
+			else {
+				listeners.clear();
+			}
 			return (T) this;
 		}
 
@@ -1493,6 +1495,11 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 		@Override
 		public TimeZone getJdbcTimeZone() {
 			return sessionFactory.getSessionFactoryOptions().getJdbcTimeZone();
+		}
+
+		@Override
+		public List<SessionEventListener> getCustomSessionEventListener() {
+			return null;
 		}
 
 		@Override
@@ -1659,4 +1666,12 @@ public final class SessionFactoryImpl implements SessionFactoryImplementor {
 			LOG.emptyCompositesEnabled();
 		}
 	}
+
+	/**
+	 * @return the FastSessionServices for this SessionFactory.
+	 */
+	FastSessionServices getFastSessionServices() {
+		return this.fastSessionServices;
+	}
+
 }

@@ -14,6 +14,7 @@ import java.util.List;
 
 import org.hibernate.cfg.NotYetImplementedException;
 import org.hibernate.dialect.pagination.LimitHelper;
+import org.hibernate.engine.spi.PersistenceContext;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.RowSelection;
 import org.hibernate.engine.spi.SharedSessionContractImplementor;
@@ -62,10 +63,6 @@ public class ResultSetProcessorImpl implements ResultSetProcessor {
 		this.hadSubselectFetches = hadSubselectFetches;
 	}
 
-	public RowReader getRowReader() {
-		return rowReader;
-	}
-
 	@Override
 	public ScrollableResultSetProcessor toOnDemandForm() {
 		// todo : implement
@@ -85,13 +82,20 @@ public class ResultSetProcessorImpl implements ResultSetProcessor {
 
 		handlePotentiallyEmptyCollectionRootReturns( loadPlan, queryParameters.getCollectionKeys(), resultSet, session );
 
+		final boolean traceEnabled = LOG.isTraceEnabled();
 		final int maxRows;
+		final List loadResults;
 		final RowSelection selection = queryParameters.getRowSelection();
 		if ( LimitHelper.hasMaxRows( selection ) ) {
 			maxRows = selection.getMaxRows();
-			LOG.tracef( "Limiting ResultSet processing to just %s rows", maxRows );
+			if ( traceEnabled ) {
+				LOG.tracef( "Limiting ResultSet processing to just %s rows", maxRows );
+			}
+			int sizeHint = maxRows < 50 ? maxRows : 50;
+			loadResults = new ArrayList( sizeHint );
 		}
 		else {
+			loadResults = new ArrayList();
 			maxRows = Integer.MAX_VALUE;
 		}
 
@@ -112,12 +116,14 @@ public class ResultSetProcessorImpl implements ResultSetProcessor {
 				hadSubselectFetches
 		);
 
-		final List loadResults = new ArrayList();
-
-		LOG.trace( "Processing result set" );
+		if ( traceEnabled ) {
+			LOG.trace( "Processing result set" );
+		}
 		int count;
 		for ( count = 0; count < maxRows && resultSet.next(); count++ ) {
-			LOG.debugf( "Starting ResultSet row #%s", count );
+			if ( traceEnabled ) {
+				LOG.tracef( "Starting ResultSet row #%s", count );
+			}
 
 			Object logicalRow = rowReader.readRow( resultSet, context );
 
@@ -128,12 +134,14 @@ public class ResultSetProcessorImpl implements ResultSetProcessor {
 			context.finishUpRow();
 		}
 
-		LOG.tracev( "Done processing result set ({0} rows)", count );
+		if ( traceEnabled ) {
+			LOG.tracev( "Done processing result set ({0} rows)", count );
+		}
 
 		rowReader.finishUp( context, afterLoadActionList );
 		context.wrapUp();
 
-		session.getPersistenceContext().initializeNonLazyCollections();
+		session.getPersistenceContextInternal().initializeNonLazyCollections();
 
 		return loadResults;
 	}
@@ -155,15 +163,17 @@ public class ResultSetProcessorImpl implements ResultSetProcessor {
 		// that the collection is empty and has no rows in the result set
 		//
 		// todo : move this inside CollectionReturn ?
-		CollectionPersister persister = ( (CollectionReturn) loadPlan.getReturns().get( 0 ) ).getCollectionPersister();
+		final CollectionPersister persister = ( (CollectionReturn) loadPlan.getReturns().get( 0 ) ).getCollectionPersister();
+		final PersistenceContext persistenceContext = session.getPersistenceContextInternal();
+		final boolean debugEnabled = LOG.isDebugEnabled();
 		for ( Serializable key : collectionKeys ) {
-			if ( LOG.isDebugEnabled() ) {
+			if ( debugEnabled ) {
 				LOG.debugf(
-						"Preparing collection intializer : %s",
+						"Preparing collection initializer : %s",
 							MessageHelper.collectionInfoString( persister, key, session.getFactory() )
 				);
 			}
-			session.getPersistenceContext()
+			persistenceContext
 					.getLoadContexts()
 					.getCollectionLoadContext( resultSet )
 					.getLoadingCollection( persister, key );

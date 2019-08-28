@@ -16,6 +16,8 @@ import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.log.DeprecationLogger;
 import org.hibernate.internal.util.StringHelper;
+import org.hibernate.loader.plan.spi.EntityQuerySpace;
+import org.hibernate.loader.plan.spi.QuerySpace;
 import org.hibernate.persister.collection.QueryableCollection;
 import org.hibernate.persister.entity.AbstractEntityPersister;
 import org.hibernate.persister.entity.EntityPersister;
@@ -74,10 +76,18 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 	 * The identifier that is the name of the property.
 	 */
 	private String propertyName;
+
+	/**
+	 * The identifier that is the name of the property. In comparison with {@link #propertyName}
+	 * it is always identical with identifier in the query, it is not changed during processing.
+	 */
+	private String originalPropertyName;
+
 	/**
 	 * The full path, to the root alias of this dot node.
 	 */
 	private String path;
+
 	/**
 	 * The unresolved property path relative to this dot node.
 	 */
@@ -158,6 +168,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		// Set the attributes of the property reference expression.
 		String propName = property.getText();
 		propertyName = propName;
+		originalPropertyName = propName;
 		// If the uresolved property path isn't set yet, just use the property name.
 		if ( propertyPath == null ) {
 			propertyPath = propName;
@@ -498,7 +509,7 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 
 			JoinSequence joinSequence;
 
-			if ( joinColumns.length == 0 ) {
+			if ( joinColumns.length == 0 && lhsFromElement instanceof EntityQuerySpace ) {
 				// When no columns are available, this is a special join that involves multiple subtypes
 				String lhsTableAlias = getLhs().getFromElement().getTableAlias();
 
@@ -690,12 +701,39 @@ public class DotNode extends FromReferenceNode implements DisplayableNode, Selec
 		return super.getDataType();
 	}
 
+	@Override
+	public String[] getReferencedTables() {
+		String[] referencedTables = null;
+		AST firstChild = getFirstChild();
+		if ( firstChild != null ) {
+			if ( firstChild instanceof FromReferenceNode ) {
+				FromReferenceNode fromReferenceNode = (FromReferenceNode) firstChild;
+				FromElement fromElement = fromReferenceNode.getFromElement();
+				if ( fromElement != null ) {
+					String table = fromElement.getPropertyTableName( getOriginalPropertyName() );
+					if ( table != null ) {
+						referencedTables = new String[] { table };
+					}
+				}
+			}
+		}
+		return referencedTables;
+	}
+
 	public void setPropertyPath(String propertyPath) {
 		this.propertyPath = propertyPath;
 	}
 
 	public String getPropertyPath() {
 		return propertyPath;
+	}
+
+	public String getPropertyName() {
+		return propertyName;
+	}
+
+	public String getOriginalPropertyName() {
+		return originalPropertyName;
 	}
 
 	public FromReferenceNode getLhs() {

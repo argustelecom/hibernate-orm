@@ -66,7 +66,11 @@ public class InformationExtractorJdbcDatabaseMetaDataImpl implements Information
 		final String extraPhysycalTableTypesConfig = configService.getSetting(
 				AvailableSettings.EXTRA_PHYSICAL_TABLE_TYPES,
 				StandardConverters.STRING,
-				""
+				configService.getSetting(
+						AvailableSettings.DEPRECATED_EXTRA_PHYSICAL_TABLE_TYPES,
+						StandardConverters.STRING,
+						""
+				)
 		);
 		if ( !"".equals( extraPhysycalTableTypesConfig.trim() ) ) {
 			this.extraPhysicalTableTypes = StringHelper.splitTrimmingTokens(
@@ -526,8 +530,8 @@ public class InformationExtractorJdbcDatabaseMetaDataImpl implements Information
 			if ( "TABLE".equalsIgnoreCase( tableType ) ) {
 				return true;
 			}
-			for ( int i = 0; i < extraPhysicalTableTypes.length; i++ ) {
-				if ( extraPhysicalTableTypes[i].equalsIgnoreCase( tableType ) ) {
+			for ( String extraPhysicalTableType : extraPhysicalTableTypes ) {
+				if ( extraPhysicalTableType.equalsIgnoreCase( tableType ) ) {
 					return true;
 				}
 			}

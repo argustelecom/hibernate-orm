@@ -18,7 +18,6 @@ import org.hibernate.AnnotationException;
 import org.hibernate.AssertionFailure;
 import org.hibernate.MappingException;
 import org.hibernate.annotations.JoinColumnOrFormula;
-import org.hibernate.annotations.JoinColumnsOrFormulas;
 import org.hibernate.annotations.JoinFormula;
 import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.boot.model.naming.EntityNaming;
@@ -144,7 +143,7 @@ public class Ejb3JoinColumn extends Ejb3Column {
 		for (int i = 0; i < anns.length; i++) {
 			JoinColumnOrFormula join = anns[i];
 			JoinFormula formula = join.formula();
-			if (formula.value() != null && !formula.value().equals("")) {
+			if ( formula.value() != null && !formula.value().isEmpty() ) {
 				joinColumns[i] = buildJoinFormula(
 						formula, mappedBy, joins, propertyHolder, propertyName, buildingContext
 				);
@@ -360,7 +359,7 @@ public class Ejb3JoinColumn extends Ejb3Column {
 			}
 
 			final String sqlType;
-			if ( columnDefinition.equals( "" ) ) {
+			if ( columnDefinition.isEmpty() ) {
 				sqlType = null;
 			}
 			else {
@@ -499,9 +498,6 @@ public class Ejb3JoinColumn extends Ejb3Column {
 		boolean ownerSide = getPropertyName() != null;
 
 		boolean isRefColumnQuoted = StringHelper.isQuoted( logicalReferencedColumn );
-		final String unquotedLogicalReferenceColumn = isRefColumnQuoted
-				? StringHelper.unquote( logicalReferencedColumn )
-				: logicalReferencedColumn;
 
 		if ( mappedBySide ) {
 			// NOTE : While it is completely misleading here to allow for the combination

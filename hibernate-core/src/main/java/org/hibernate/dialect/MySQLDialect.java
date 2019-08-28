@@ -10,6 +10,8 @@ import java.sql.CallableStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.hibernate.JDBCException;
 import org.hibernate.NullPrecedence;
@@ -45,8 +47,14 @@ import org.hibernate.type.StandardBasicTypes;
 @SuppressWarnings("deprecation")
 public class MySQLDialect extends Dialect {
 
+	private static final Pattern ESCAPE_PATTERN = Pattern.compile(
+			"\\",
+			Pattern.LITERAL
+	);
+	public static final String ESCAPE_PATTERN_REPLACEMENT = Matcher.quoteReplacement(
+			"\\\\" );
 	private final UniqueDelegate uniqueDelegate;
-	private MySQLStorageEngine storageEngine;
+	private final MySQLStorageEngine storageEngine;
 
 	private static final LimitHandler LIMIT_HANDLER = new AbstractLimitHandler() {
 		@Override
@@ -68,10 +76,7 @@ public class MySQLDialect extends Dialect {
 		super();
 
 		String storageEngine = Environment.getProperties().getProperty( Environment.STORAGE_ENGINE );
-		if(storageEngine == null) {
-			storageEngine = System.getProperty( Environment.STORAGE_ENGINE );
-		}
-		if(storageEngine == null) {
+		if ( storageEngine == null ) {
 			this.storageEngine = getDefaultMySQLStorageEngine();
 		}
 		else if( "innodb".equals( storageEngine.toLowerCase() ) ) {
@@ -81,7 +86,7 @@ public class MySQLDialect extends Dialect {
 			this.storageEngine = MyISAMStorageEngine.INSTANCE;
 		}
 		else {
-			throw new UnsupportedOperationException( "The " + storageEngine + " storage engine is not supported!" );
+			throw new UnsupportedOperationException( "The storage engine '" + storageEngine + "' is not supported!" );
 		}
 
 		registerColumnType( Types.BIT, "bit" );
@@ -596,6 +601,6 @@ public class MySQLDialect extends Dialect {
 
 	@Override
 	protected String escapeLiteral(String literal) {
-		return super.escapeLiteral( literal ).replace("\\", "\\\\");
+		return ESCAPE_PATTERN.matcher( super.escapeLiteral( literal ) ).replaceAll( ESCAPE_PATTERN_REPLACEMENT );
 	}
 }

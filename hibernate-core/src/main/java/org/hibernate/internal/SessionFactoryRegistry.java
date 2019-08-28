@@ -155,7 +155,7 @@ public class SessionFactoryRegistry {
 		final SessionFactory sessionFactory = sessionFactoryMap.get( uuid );
 		if ( sessionFactory == null && LOG.isDebugEnabled() ) {
 			LOG.debugf( "Not found: %s", uuid );
-			LOG.debugf( sessionFactoryMap.toString() );
+			LOG.debug( sessionFactoryMap.toString() );
 		}
 		return sessionFactory;
 	}
@@ -231,8 +231,7 @@ public class SessionFactoryRegistry {
 
 	public static class ObjectFactoryImpl implements ObjectFactory {
 		@Override
-		public Object getObjectInstance(Object reference, Name name, Context nameCtx, Hashtable<?, ?> environment)
-				throws Exception {
+		public Object getObjectInstance(Object reference, Name name, Context nameCtx, Hashtable<?, ?> environment) {
 			LOG.debugf( "JNDI lookup: %s", name );
 			final String uuid = (String) ( (Reference) reference ).get( 0 ).getContent();
 			LOG.tracef( "Resolved to UUID = %s", uuid );

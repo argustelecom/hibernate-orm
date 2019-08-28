@@ -442,4 +442,14 @@ public class AbstractDelegatingSessionFactoryOptions implements SessionFactoryOp
 	public boolean areJPACallbacksEnabled() {
 		return delegate.areJPACallbacksEnabled();
 	}
+
+	@Override
+	public boolean isEnhancementAsProxyEnabled() {
+		return delegate.isEnhancementAsProxyEnabled();
+	}
+
+	@Override
+	public boolean isOmitJoinOfSuperclassTablesEnabled() {
+		return delegate.isOmitJoinOfSuperclassTablesEnabled();
+	}
 }

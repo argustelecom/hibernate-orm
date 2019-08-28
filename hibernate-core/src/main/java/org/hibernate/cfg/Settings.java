@@ -64,9 +64,7 @@ public final class Settings {
 		this.defaultCatalogName = defaultCatalogName;
 		this.defaultSchemaName = defaultSchemaName;
 
-		final boolean debugEnabled =  LOG.isDebugEnabled();
-
-		if ( debugEnabled ) {
+		if ( LOG.isDebugEnabled() ) {
 			LOG.debugf( "SessionFactory name : %s", sessionFactoryOptions.getSessionFactoryName() );
 			LOG.debugf( "Automatic flush during beforeCompletion(): %s", enabledDisabled( sessionFactoryOptions.isFlushBeforeCompletionEnabled() ) );
 			LOG.debugf( "Automatic session close at end of transaction: %s", enabledDisabled( sessionFactoryOptions.isAutoCloseSessionEnabled() ) );
@@ -78,7 +76,7 @@ public final class Settings {
 			LOG.debugf( "Check Nullability in Core (should be disabled when Bean Validation is on): %s", enabledDisabled( sessionFactoryOptions.isCheckNullability() ) );
 			LOG.debugf( "Allow initialization of lazy state outside session : %s", enabledDisabled( sessionFactoryOptions.isInitializeLazyStateOutsideTransactionsEnabled() ) );
 
-			LOG.debugf( "Using BatchFetchStyle : " + sessionFactoryOptions.getBatchFetchStyle().name() );
+			LOG.debugf( "Using BatchFetchStyle : %", sessionFactoryOptions.getBatchFetchStyle().name() );
 			LOG.debugf( "Default batch fetch size: %s", sessionFactoryOptions.getDefaultBatchFetchSize() );
 			LOG.debugf( "Maximum outer join fetch depth: %s", sessionFactoryOptions.getMaximumFetchDepth() );
 			LOG.debugf( "Default null ordering: %s", sessionFactoryOptions.getDefaultNullPrecedence() );

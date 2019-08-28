@@ -18,14 +18,14 @@ import org.hibernate.dialect.Dialect;
  * @author Steve Ebersole
  */
 public class InsertSelect {
-	private Dialect dialect;
 	private String tableName;
 	private String comment;
 	private List columnNames = new ArrayList();
 	private Select select;
 
 	public InsertSelect(Dialect dialect) {
-		this.dialect = dialect;
+		//This is no longer used. Deprecate & remove?
+		// this.dialect = dialect;
 	}
 
 	public InsertSelect setTableName(String tableName) {
@@ -44,8 +44,8 @@ public class InsertSelect {
 	}
 
 	public InsertSelect addColumns(String[] columnNames) {
-		for ( int i = 0; i < columnNames.length; i++ ) {
-			this.columnNames.add( columnNames[i] );
+		for ( String columnName : columnNames ) {
+			this.columnNames.add( columnName );
 		}
 		return this;
 	}
