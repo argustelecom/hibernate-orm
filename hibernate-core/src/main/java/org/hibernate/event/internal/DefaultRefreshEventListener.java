@@ -196,8 +196,11 @@ public class DefaultRefreshEventListener implements RefreshEventListener {
 					lockOptionsToUse.setLockMode( LockMode.READ );
 
 					// and prepare to reset the entry lock-mode to the previous lock mode after
-					// the refresh completes
-					postRefreshLockMode = currentLockMode;
+					if(!persister.isMutable()){
+						postRefreshLockMode = LockMode.READ;
+					}else{
+						postRefreshLockMode = currentLockMode;
+					}
 				}
 				else {
 					lockOptionsToUse.setLockMode( currentLockMode );
